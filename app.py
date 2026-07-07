@@ -243,6 +243,29 @@ async def health():
     return {"status": "ok", "template": TEMPLATE_PATH.exists()}
 
 
+@app.get("/debug/ai-test")
+async def debug_ai_test():
+    """Temporary diagnostic route — exercises the exact same Gemini call
+    path the app uses in production, and returns the precise exception
+    instead of a generic 'Connection error.' Remove once the Render
+    deployment issue it was added to diagnose is resolved."""
+    import traceback
+    from ai_client import _ai_complete, AI_MODEL
+    try:
+        r = _ai_complete(
+            model=AI_MODEL, max_tokens=20,
+            messages=[{"role": "user", "content": "Reply with just: OK"}],
+        )
+        return {"status": "ok", "response": r.choices[0].message.content}
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_type": type(e).__name__,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  CONFIRMATION GENERATOR
 # ═══════════════════════════════════════════════════════════════════
