@@ -1,6 +1,7 @@
 """Reiseverlauf Generator: DMC-offer parsing, per-day AI prose generation
 (grounded via reference_db.py + rag_retrieval.py), and Word document assembly."""
 import json
+import os
 import re
 import zipfile
 import io
@@ -13,8 +14,16 @@ from ai_client import _ai_complete, AI_MODEL
 # Semantic (embedding-based) retrieval — complements reference_db's keyword
 # matching for cases with no shared exact word (e.g. DMC spells a site
 # "Kinkaku-ji" while the sample library has it as one word, "Kinkakuji").
-# Optional: the app must still work if sentence-transformers isn't installed.
+# Optional: the app must still work if sentence-transformers isn't installed,
+# and must be disableable outright on a memory-constrained host — loading
+# the transformer model + PyTorch the first time it's used added enough
+# memory to push a 512MB Render free-tier instance into an OOM kill. Set
+# DISABLE_RAG=true there; exact-match + the AI's own knowledge still cover
+# most cases without it.
+_RAG_DISABLED_BY_ENV = os.environ.get("DISABLE_RAG", "").strip().lower() in ("1", "true", "yes")
 try:
+    if _RAG_DISABLED_BY_ENV:
+        raise RuntimeError("RAG disabled via DISABLE_RAG env var")
     from rag_retrieval import retrieve as _rag_retrieve
     _RAG_ENABLED = True
 except Exception:

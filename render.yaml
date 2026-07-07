@@ -18,3 +18,5 @@ services:
         sync: false
       - key: TUNNEL_AUTH_PASS
         sync: false
+      - key: DISABLE_RAG
+        value: "true"
