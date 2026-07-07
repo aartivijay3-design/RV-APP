@@ -27988,6 +27988,14 @@
       "location_heading": "Nha Trang /Abreise",
       "text": "Transfer zum Flughafen (vom Hotel in der Gruppe zu festgelegten Zeiten durchgeführt) für Ihren Rückflug.",
       "language": "de"
+    },
+    {
+      "type": "sightseeing",
+      "destination": "Japan",
+      "source_file": "Manuell hinzugefügt (Datenbank-Tab)",
+      "language": "de",
+      "text": "Der Tsukiji-Markt ist einer der berühmtesten und belebtesten Lebensmittelmärkte in \nTokyo und vor allem für seinen lebhaften Markt im Freien bekannt, auf dem frische Meeresfrüchte, \nObst, Gemüse und andere lokale Köstlichkeiten verkauft werden. Er ist ein beliebtes Ziel für \nEinheimische und Touristen und bietet eine einzigartige Gelegenheit, die traditionelle japanische \nEsskultur zu erleben. Sie können durch die engen Gassen schlendern, die von Ständen und kleinen \nRestaurants gesäumt sind, die alles von Sushi bis Street Food anbieten.",
+      "location_heading": "Tsukiji-Markt"
     }
   ]
 }
