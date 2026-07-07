@@ -23,3 +23,6 @@ test_confirmation.docx
 # Portable tool binaries downloaded for local/manual use, not part of the app
 cloudflared.exe
 railway-cli/
+
+# Accidental empty clone of the same repo left inside the project folder
+RV app/
