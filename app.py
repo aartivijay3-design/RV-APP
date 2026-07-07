@@ -37,10 +37,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # ── Optional HTTP Basic Auth gate ──────────────────────────────────────────
-# Off by default (normal LAN use). Set TUNNEL_AUTH_USER / TUNNEL_AUTH_PASS
-# (e.g. when exposing the app via a temporary public tunnel) to require a
-# password on every request — this app handles real client travel data and
-# should never sit open on the public internet without one.
+# Off by default (normal LAN use). Set TUNNEL_AUTH_USER / TUNNEL_AUTH_PASS to
+# require a password on every request — needed whenever the app is reachable
+# from outside the office LAN, whether via a temporary tunnel or a permanent
+# public host like Render. This app handles real client travel data and
+# should never sit on a public URL without one.
 _TUNNEL_USER = os.environ.get("TUNNEL_AUTH_USER", "")
 _TUNNEL_PASS = os.environ.get("TUNNEL_AUTH_PASS", "")
 

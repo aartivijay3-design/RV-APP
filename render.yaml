@@ -14,3 +14,7 @@ services:
         sync: false
       - key: GITHUB_BRANCH
         value: main
+      - key: TUNNEL_AUTH_USER
+        sync: false
+      - key: TUNNEL_AUTH_PASS
+        sync: false
