@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: bawa-rv-app
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_server.py
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_BRANCH
+        value: main

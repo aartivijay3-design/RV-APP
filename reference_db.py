@@ -15,8 +15,18 @@ from pathlib import Path
 from typing import Optional
 
 from paths import DATA_DIR
+import github_store
 
 DB_PATH = DATA_DIR / "reference_library.json"
+_GITHUB_PATH = "data/reference_library.json"
+
+# On a host with no persistent disk (Render's free tier resets the local
+# filesystem on every restart), pull whatever was last saved from GitHub
+# before anything reads DB_PATH — otherwise every restart would silently
+# roll back to the version baked into the deployed image, discarding any
+# edits made through the Datenbank tab since. No-op if GITHUB_TOKEN/
+# GITHUB_REPO aren't set (local/LAN use, or a host with a real disk).
+github_store.pull(_GITHUB_PATH, DB_PATH)
 
 
 @lru_cache(maxsize=1)
@@ -29,6 +39,7 @@ def _load() -> dict:
 def _save(data: dict) -> None:
     DB_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     _load.cache_clear()
+    github_store.push(_GITHUB_PATH, DB_PATH, "Update reference_library.json via Datenbank tab")
 
 
 # ── Admin CRUD — used by the "Datenbank" tab so staff can add or correct a

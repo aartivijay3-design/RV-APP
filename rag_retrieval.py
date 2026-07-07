@@ -15,6 +15,7 @@ import json
 import numpy as np
 
 from paths import DATA_DIR
+import github_store
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _JSON_PATH  = DATA_DIR / "reference_library.json"
@@ -43,6 +44,14 @@ def _load():
     data = json.loads(_JSON_PATH.read_text(encoding="utf-8"))
     _entries = data["entries"]
 
+    # On a host with no persistent disk, pull whatever was last built instead
+    # of rebuilding from scratch every cold start — building takes ~2-4 min,
+    # which combined with a free-tier wake-up delay would make the first
+    # request after any idle period unacceptably slow. No-op if GitHub sync
+    # isn't configured.
+    if not _INDEX_PATH.exists():
+        github_store.pull("data/reference_library.npy", _INDEX_PATH)
+
     if _INDEX_PATH.exists():
         print("[RAG] Loading cached embeddings …", flush=True)
         _embeddings = np.load(str(_INDEX_PATH))
@@ -62,6 +71,7 @@ def _load():
         )
         np.save(str(_INDEX_PATH), _embeddings)
         print("[RAG] Embeddings saved to reference_library.npy", flush=True)
+        github_store.push("data/reference_library.npy", _INDEX_PATH, "Update cached reference embeddings")
 
     print(f"[RAG] Ready — {len(_entries)} entries indexed.", flush=True)
 

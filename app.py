@@ -29,6 +29,7 @@ from rechnung import (
     parse_rechnung_with_ai, build_confirmation_docx, _extract_rechnung_text,
 )
 import reference_db
+import github_store
 from paths import OUTPUT_DIR, DMCS_PATH
 
 app = FastAPI(title="BAWA Reiseverlauf Generator")
@@ -245,6 +246,12 @@ async def health():
 #  CONFIRMATION GENERATOR
 # ═══════════════════════════════════════════════════════════════════
 
+# See reference_db.py for why this pull-on-import / push-on-save pattern
+# exists — same reasoning applies here: without it, DMC edits would be
+# silently lost on every restart on a host with no persistent disk.
+github_store.pull("dmcs.json", DMCS_PATH)
+
+
 @app.get("/api/dmcs")
 async def get_dmcs():
     """Return the full DMC list grouped by destination."""
@@ -257,6 +264,7 @@ async def get_dmcs():
 async def save_dmcs(payload: dict):
     """Overwrite the DMC list (called from the Manage DMCs UI)."""
     DMCS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    github_store.push("dmcs.json", DMCS_PATH, "Update dmcs.json via Manage DMCs UI")
     return {"status": "saved"}
 
 
