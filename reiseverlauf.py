@@ -1,0 +1,1578 @@
+"""Reiseverlauf Generator: DMC-offer parsing, per-day AI prose generation
+(grounded via reference_db.py + rag_retrieval.py), and Word document assembly."""
+import json
+import re
+import zipfile
+import io
+from pathlib import Path
+from xml.sax.saxutils import escape
+
+import reference_db
+from ai_client import _ai_complete, AI_MODEL
+
+# Semantic (embedding-based) retrieval — complements reference_db's keyword
+# matching for cases with no shared exact word (e.g. DMC spells a site
+# "Kinkaku-ji" while the sample library has it as one word, "Kinkakuji").
+# Optional: the app must still work if sentence-transformers isn't installed.
+try:
+    from rag_retrieval import retrieve as _rag_retrieve
+    _RAG_ENABLED = True
+except Exception:
+    _RAG_ENABLED = False
+
+TEMPLATE_PATH = Path("assets/template.docx")
+
+# ── XML helpers ──────────────────────────────────────────────────────────────
+
+def x(text: str) -> str:
+    """XML-escape a string (handles &, <, >, keeps umlauts as UTF-8)."""
+    return escape(str(text))
+
+RPR_TEAL = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:color w:val="0B3A43"/><w:sz w:val="22"/><w:szCs w:val="22"/>'
+RPR_TEAL_B = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/><w:color w:val="0B3A43"/><w:sz w:val="22"/><w:szCs w:val="22"/>'
+RPR_TEAL_B_U = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/><w:iCs/><w:color w:val="0B3A43"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:u w:val="single"/>'
+RPR_GOLD_B_U = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/><w:color w:val="9C8138"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:u w:val="single"/>'
+RPR_GOLD_B = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/><w:color w:val="9C8138"/><w:sz w:val="22"/><w:szCs w:val="22"/>'
+RPR_TEAL_I = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:i/><w:color w:val="0B3A43"/><w:sz w:val="22"/><w:szCs w:val="22"/>'
+RPR_LIST = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter" w:cs="Calibri"/><w:color w:val="0B3A43"/><w:sz w:val="22"/>'
+
+PPR_NUM = '<w:numPr><w:ilvl w:val="12"/><w:numId w:val="0"/></w:numPr><w:suppressAutoHyphens/><w:jc w:val="both"/>'
+PPR_BODY = '<w:suppressAutoHyphens/><w:jc w:val="both"/>'
+
+
+def para(ppr_inner: str, rpr: str, text: str) -> str:
+    t = f'<w:t xml:space="preserve">{x(text)}</w:t>' if text else ""
+    return (
+        f'<w:p><w:pPr>{ppr_inner}<w:rPr>{rpr}</w:rPr></w:pPr>'
+        + (f'<w:r><w:rPr>{rpr}</w:rPr>{t}</w:r>' if text else "")
+        + "</w:p>"
+    )
+
+
+def ep() -> str:
+    """Empty spacer paragraph."""
+    return para(PPR_NUM, RPR_TEAL, "")
+
+
+def day_heading(text: str) -> str:
+    return para(PPR_NUM, RPR_TEAL_B_U, text)
+
+
+def loc_heading(text: str) -> str:
+    return para(PPR_NUM, RPR_TEAL_B, text)
+
+
+def body_para(text: str) -> str:
+    return para(PPR_BODY, RPR_TEAL, text)
+
+
+def hotel_line(name: str) -> str:
+    return para(PPR_BODY, RPR_GOLD_B, f"Übernachtung im {name}")
+
+
+def section_heading(text: str) -> str:
+    return (
+        f'<w:p><w:pPr><w:spacing w:after="160" w:line="259" w:lineRule="auto"/>'
+        f'<w:rPr>{RPR_GOLD_B_U}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{RPR_GOLD_B_U}</w:rPr><w:t>{x(text)}</w:t></w:r></w:p>'
+    )
+
+
+def page_break() -> str:
+    return f'<w:p><w:r><w:rPr>{RPR_TEAL}</w:rPr><w:br w:type="page"/></w:r></w:p>'
+
+
+def ende_reise() -> str:
+    return para(PPR_BODY, RPR_GOLD_B, "ENDE DER REISE")
+
+
+def truncation_warning() -> str:
+    """Red warning paragraph inserted when AI output was truncated."""
+    rpr = ('<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/>'
+           '<w:color w:val="C00000"/><w:sz w:val="22"/><w:szCs w:val="22"/>')
+    return (
+        f'<w:p><w:pPr><w:jc w:val="both"/><w:rPr>{rpr}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{rpr}</w:rPr>'
+        f'<w:t>⚠ HINWEIS: Die KI-Generierung wurde vorzeitig abgebrochen – '
+        f'das Dokument ist möglicherweise unvollständig. '
+        f'Bitte erneut generieren oder fehlende Tage manuell ergänzen.</w:t>'
+        f'</w:r></w:p>'
+    )
+
+
+def missing_text_placeholder() -> str:
+    """Placeholder for a day whose body_paragraphs were cut off."""
+    rpr = ('<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:i/>'
+           '<w:color w:val="C00000"/><w:sz w:val="22"/><w:szCs w:val="22"/>')
+    return (
+        f'<w:p><w:pPr><w:jc w:val="both"/><w:rPr>{rpr}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{rpr}</w:rPr>'
+        f'<w:t>[Tagestext fehlt – bitte manuell ergänzen]</w:t>'
+        f'</w:r></w:p>'
+    )
+
+
+def label_line(label: str, value: str, bold_label: bool = True, underline: bool = True) -> str:
+    u = "<w:u w:val=\"single\"/>" if underline else ""
+    rpr_lbl = f'<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/><w:color w:val="0B3A43"/><w:sz w:val="22"/><w:szCs w:val="22"/>{u}'
+    rpr_val = RPR_TEAL
+    return (
+        f'<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5670"/></w:tabs>'
+        f'<w:rPr>{rpr_lbl}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{rpr_lbl}</w:rPr><w:t>{x(label)}</w:t></w:r>'
+        f'<w:r><w:rPr>{rpr_val}</w:rPr><w:tab/><w:tab/></w:r>'
+        f'<w:r><w:rPr>{rpr_val}</w:rPr><w:t xml:space="preserve">{x(value)}</w:t></w:r>'
+        f'</w:p>'
+    )
+
+
+def bullet_item(text: str) -> str:
+    return (
+        f'<w:p><w:pPr><w:pStyle w:val="Listenabsatz"/>'
+        f'<w:numPr><w:ilvl w:val="0"/><w:numId w:val="16"/></w:numPr>'
+        f'<w:suppressAutoHyphens/>'
+        f'<w:rPr>{RPR_LIST}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{RPR_LIST}</w:rPr>'
+        f'<w:t xml:space="preserve">{x(text)}</w:t></w:r></w:p>'
+    )
+
+
+def _ubersicht_photo_xml(rid: str, draw_id: int) -> str:
+    """Inline drawing XML for a Reiseübersicht photo: 5.5cm × 4.85cm."""
+    # 1 cm = 360000 EMU  →  5.5cm = 1980000, 4.85cm = 1746000
+    cx, cy = 1980000, 1746000
+    return (
+        f'<w:drawing>'
+        f'<wp:inline distT="0" distB="0" distL="0" distR="0"'
+        f' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+        f'<wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+        f'<wp:docPr id="{draw_id}" name="Foto {draw_id}"/>'
+        f'<wp:cNvGraphicFramePr>'
+        f'<a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>'
+        f'</wp:cNvGraphicFramePr>'
+        f'<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        f'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f'<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f'<pic:nvPicPr>'
+        f'<pic:cNvPr id="{draw_id}" name="Foto {draw_id}"/>'
+        f'<pic:cNvPicPr><a:picLocks noChangeAspect="1" noChangeArrowheads="1"/></pic:cNvPicPr>'
+        f'</pic:nvPicPr>'
+        f'<pic:blipFill>'
+        f'<a:blip r:embed="{rid}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" cstate="print"/>'
+        f'<a:srcRect/><a:stretch><a:fillRect/></a:stretch>'
+        f'</pic:blipFill>'
+        f'<pic:spPr bwMode="auto">'
+        f'<a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+        f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        f'<a:noFill/><a:ln><a:noFill/></a:ln>'
+        f'</pic:spPr>'
+        f'</pic:pic></a:graphicData></a:graphic>'
+        f'</wp:inline></w:drawing>'
+    )
+
+
+def build_reiseubersicht_table(days: list, photo_rids: list = None) -> str:
+    """Build the Reiseübersicht: 3-column table, brand colors, all borders, Inter 11pt.
+    Consecutive free/transfer days (no bullets) are collapsed into a single merged row.
+    """
+    TEAL = "0B3A43"
+    GOLD = "C4911A"
+    SZ   = "22"  # 11pt
+
+    def rpr(bold=False, color=TEAL):
+        b = '<w:b/>' if bold else ''
+        return (f'<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/>{b}'
+                f'<w:color w:val="{color}"/><w:sz w:val="{SZ}"/><w:szCs w:val="{SZ}"/>'
+                f'<w:lang w:val="de-DE"/>')
+
+    BS = 'w:val="single" w:sz="4" w:space="0" w:color="auto"'
+    ALL_BORDERS = (
+        f'<w:tcBorders>'
+        f'<w:top {BS}/><w:left {BS}/><w:bottom {BS}/><w:right {BS}/>'
+        f'</w:tcBorders>'
+    )
+    TBL_BORDERS = (
+        f'<w:tblBorders>'
+        f'<w:top {BS}/><w:left {BS}/><w:bottom {BS}/><w:right {BS}/>'
+        f'<w:insideH {BS}/><w:insideV {BS}/>'
+        f'</w:tblBorders>'
+    )
+
+    # Column widths (DXA): 1600 | 4800 | 2672 = 9072 total
+    W1, W2, W3 = 1600, 4800, 2672
+    MAR = '<w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>'
+
+    def tc(w, content_xml, span=None):
+        """Single table cell; span sets gridSpan for column merging."""
+        gs = f'<w:gridSpan w:val="{span}"/>' if span else ''
+        return (f'<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/>{gs}'
+                f'{ALL_BORDERS}{MAR}</w:tcPr>'
+                f'{content_xml}</w:tc>')
+
+    def is_free_day(day):
+        """True when a day has no real activity bullets — just transfer/arrival."""
+        bullets = day.get("overview_bullets", [])
+        if not bullets:
+            return True
+        low = [b.strip().lower() for b in bullets]
+        return all(b in ("transfer", "anreise", "anreise / flug", "abreise", "flug") for b in low)
+
+    parts = []
+
+    # ── Header row ──────────────────────────────────────────────────────────────
+    def hdr_cell(w, text):
+        return (f'<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/>'
+                f'{ALL_BORDERS}{MAR}</w:tcPr>'
+                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                f'<w:r><w:rPr>{rpr(bold=True, color=TEAL)}</w:rPr>'
+                f'<w:t>{x(text)}</w:t></w:r></w:p></w:tc>')
+
+    parts.append(
+        '<w:tbl>'
+        f'<w:tblPr><w:tblW w:w="9072" w:type="dxa"/>'
+        f'{TBL_BORDERS}'
+        f'<w:tblLook w:val="0000"/>'
+        f'</w:tblPr>'
+        f'<w:tblGrid>'
+        f'<w:gridCol w:w="{W1}"/>'
+        f'<w:gridCol w:w="{W2}"/>'
+        f'<w:gridCol w:w="{W3}"/>'
+        f'</w:tblGrid>'
+        f'<w:tr>'
+        + hdr_cell(W1, "Tag / Datum")
+        + hdr_cell(W2, "Highlights")
+        + hdr_cell(W3, "Übernachtung")
+        + '</w:tr>'
+    )
+
+    # ── Group consecutive free days ──────────────────────────────────────────────
+    # Each group is either a single normal day, or a run of 2+ free days merged.
+    groups = []
+    i = 0
+    while i < len(days):
+        if is_free_day(days[i]):
+            run = [days[i]]
+            while i + 1 < len(days) and is_free_day(days[i + 1]):
+                i += 1
+                run.append(days[i])
+            groups.append(("free", run))
+        else:
+            groups.append(("normal", [days[i]]))
+        i += 1
+
+    # ── Render rows ──────────────────────────────────────────────────────────────
+    for kind, group in groups:
+        if kind == "normal":
+            day = group[0]
+            global_i = days.index(day)
+            weekday    = day.get("weekday", "")
+            date_str   = day.get("date", "")
+            location   = day.get("location_heading", "")
+            hotel      = day.get("hotel", {}) if isinstance(day.get("hotel"), dict) else {}
+            hotel_name = hotel.get("name", "")
+            bullets    = day.get("overview_bullets", [])
+            day_num    = day.get("day_number", global_i + 1)
+
+            col1 = (
+                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                f'<w:r><w:rPr>{rpr(bold=True)}</w:rPr>'
+                f'<w:t xml:space="preserve">Tag {x(str(day_num))}</w:t></w:r></w:p>'
+                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                f'<w:r><w:rPr>{rpr()}</w:rPr>'
+                f'<w:t>{x(weekday)}</w:t></w:r></w:p>'
+                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                f'<w:r><w:rPr>{rpr()}</w:rPr>'
+                f'<w:t>{x(date_str)}</w:t></w:r></w:p>'
+            )
+
+            col2 = (
+                f'<w:p><w:pPr><w:spacing w:after="40"/></w:pPr>'
+                f'<w:r><w:rPr>{rpr(bold=True)}</w:rPr>'
+                f'<w:t>{x(location)}</w:t></w:r></w:p>'
+            )
+            for b in bullets:
+                col2 += (
+                    f'<w:p><w:pPr><w:spacing w:after="20"/>'
+                    f'<w:ind w:left="160" w:hanging="160"/></w:pPr>'
+                    f'<w:r><w:rPr>{rpr(color=TEAL)}</w:rPr>'
+                    f'<w:t xml:space="preserve">· {x(b)}</w:t></w:r></w:p>'
+                )
+
+            col3_text = hotel_name if hotel_name else "–"
+            col3 = (
+                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                f'<w:r><w:rPr>{rpr()}</w:rPr>'
+                f'<w:t>{x(col3_text)}</w:t></w:r></w:p>'
+            )
+
+            parts.append(f'<w:tr>{tc(W1, col1)}{tc(W2, col2)}{tc(W3, col3)}</w:tr>')
+
+        else:
+            # Collapsed free-day row: merge cols 2+3 into one wide cell
+            first = group[0]
+            last  = group[-1]
+            first_num = first.get("day_number", days.index(first) + 1)
+            last_num  = last.get("day_number",  days.index(last)  + 1)
+
+            if len(group) == 1:
+                day_label = f'Tag {first_num}'
+                date_label = first.get("date", "")
+                weekday_label = first.get("weekday", "")
+            else:
+                day_label = f'Tag {first_num} – {last_num}'
+                date_label = f'{first.get("date", "")} – {last.get("date", "")}'
+                weekday_label = ""
+
+            # Determine label from bullets or location
+            loc = first.get("location_heading", "")
+            bullets = first.get("overview_bullets", [])
+            if bullets:
+                activity_label = bullets[0]
+            elif loc:
+                activity_label = loc
+            else:
+                activity_label = "Transfer / Anreise"
+
+            col1 = (
+                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                f'<w:r><w:rPr>{rpr(bold=True)}</w:rPr>'
+                f'<w:t xml:space="preserve">{x(day_label)}</w:t></w:r></w:p>'
+                + (f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                   f'<w:r><w:rPr>{rpr()}</w:rPr>'
+                   f'<w:t>{x(weekday_label)}</w:t></w:r></w:p>' if weekday_label else '')
+                + f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                  f'<w:r><w:rPr>{rpr()}</w:rPr>'
+                  f'<w:t>{x(date_label)}</w:t></w:r></w:p>'
+            )
+
+            # Merged col2+col3 spanning 2 grid columns
+            merged_content = (
+                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                f'<w:r><w:rPr>{rpr(bold=True)}</w:rPr>'
+                f'<w:t>{x(activity_label)}</w:t></w:r></w:p>'
+            )
+            merged_cell = (
+                f'<w:tc><w:tcPr><w:tcW w:w="{W2 + W3}" w:type="dxa"/>'
+                f'<w:gridSpan w:val="2"/>'
+                f'{ALL_BORDERS}{MAR}</w:tcPr>'
+                f'{merged_content}</w:tc>'
+            )
+
+            parts.append(f'<w:tr>{tc(W1, col1)}{merged_cell}</w:tr>')
+
+    parts.append('</w:tbl>')
+    return "".join(parts)
+
+
+def cover_page(client_name: str, date_line: str, destination: str = "DESTINATION", subtitle: str = "Eine Reise voller Eindrücke") -> str:
+    """Build the cover page XML — keeps rId10 (Tokyo photo) from template."""
+    inter_rpr    = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:color w:val="0B3A43"/><w:sz w:val="28"/><w:szCs w:val="28"/>'
+    inter40_rpr  = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/><w:color w:val="0B3A43"/><w:sz w:val="44"/><w:szCs w:val="44"/>'
+    italic_rpr   = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:i/><w:color w:val="0B3A43"/><w:sz w:val="28"/><w:szCs w:val="28"/>'
+    bold_rpr     = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/><w:color w:val="0B3A43"/><w:sz w:val="28"/><w:szCs w:val="28"/>'
+
+    # Anchored floating image — 20.32 cm × 13.56 cm, bleeds left (negative h-offset)
+    # Template: rId11 = media/image1.jpeg; we reuse rId10 from our template
+    photo_xml = (
+        '<w:r><w:rPr><w:noProof/></w:rPr><w:drawing>'
+        '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" '
+        '  relativeHeight="251661312" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
+        '<wp:simplePos x="0" y="0"/>'
+        '<wp:positionH relativeFrom="column"><wp:posOffset>-899795</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>240665</wp:posOffset></wp:positionV>'
+        '<wp:extent cx="7559675" cy="5039995"/>'
+        '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+        '<wp:wrapTopAndBottom/>'
+        '<wp:docPr id="1" name="Cover Photo"/>'
+        '<wp:cNvGraphicFramePr>'
+        '<a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>'
+        '</wp:cNvGraphicFramePr>'
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:nvPicPr><pic:cNvPr id="0" name="Cover Photo"/>'
+        '<pic:cNvPicPr><a:picLocks noChangeAspect="1" noChangeArrowheads="1"/></pic:cNvPicPr>'
+        '</pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="rId10" cstate="print"/>'
+        '<a:srcRect t="74" b="74"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr bwMode="auto"><a:xfrm><a:off x="0" y="0"/>'
+        '<a:ext cx="7559675" cy="5039995"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        '<a:noFill/><a:ln><a:noFill/></a:ln></pic:spPr>'
+        '</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    )
+
+    return (
+        # empty top spacer
+        f'<w:p><w:pPr><w:rPr>{inter40_rpr}</w:rPr></w:pPr></w:p>'
+        # DESTINATION — large centered
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr>{inter40_rpr}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{inter40_rpr}</w:rPr><w:t>{x(destination.upper())}</w:t></w:r></w:p>'
+        # empty spacer
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr>{inter_rpr}</w:rPr></w:pPr></w:p>'
+        # italic subtitle
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr>{italic_rpr}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{italic_rpr}</w:rPr><w:t>{x(subtitle)}</w:t></w:r></w:p>'
+        # photo anchor paragraph
+        f'<w:p><w:pPr><w:rPr>{inter_rpr}</w:rPr></w:pPr>'
+        f'{photo_xml}'
+        f'</w:p>'
+        # spacer
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr>{inter_rpr}</w:rPr></w:pPr></w:p>'
+        # "Persönliche Rundreise für"
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr>{inter_rpr}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{inter_rpr}</w:rPr><w:t xml:space="preserve">Persönliche Rundreise für </w:t></w:r></w:p>'
+        # client name — bold
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr>{bold_rpr}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{bold_rpr}</w:rPr><w:t>{x(client_name)}</w:t></w:r></w:p>'
+        # spacer
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr>{inter_rpr}</w:rPr></w:pPr></w:p>'
+        # date line + page break
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr>{inter_rpr}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{inter_rpr}</w:rPr><w:t>{x(date_line)}</w:t></w:r>'
+        f'<w:r><w:rPr>{inter_rpr}</w:rPr><w:br w:type="page"/></w:r></w:p>'
+    )
+
+
+def map_image_xml(rid: str = "rId11") -> str:
+    """Inline map/Landkarte image — full content width, centered."""
+    cx, cy = 5760720, 4320540  # 6.30 x 4.72 inches, original template dimensions
+    return (
+        f'<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr>'
+        f'<w:r><w:rPr><w:noProof/></w:rPr><w:drawing>'
+        f'<wp:inline distT="0" distB="0" distL="0" distR="0">'
+        f'<wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+        f'<wp:docPr id="2" name="Landkarte"/>'
+        f'<wp:cNvGraphicFramePr>'
+        f'<a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>'
+        f'</wp:cNvGraphicFramePr>'
+        f'<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        f'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f'<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f'<pic:nvPicPr><pic:cNvPr id="0" name="Landkarte"/>'
+        f'<pic:cNvPicPr><a:picLocks noChangeAspect="1" noChangeArrowheads="1"/></pic:cNvPicPr>'
+        f'</pic:nvPicPr>'
+        f'<pic:blipFill><a:blip r:embed="{rid}" cstate="print"/>'
+        f'<a:srcRect/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        f'<pic:spPr bwMode="auto"><a:xfrm><a:off x="0" y="0"/>'
+        f'<a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+        f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        f'<a:noFill/><a:ln><a:noFill/></a:ln></pic:spPr>'
+        f'</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+    )
+
+
+# ── Document builder ─────────────────────────────────────────────────────────
+
+def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
+    parts = []
+
+    # Cover page
+    client_display = itinerary.get("client_name", "Familie")
+    date_line = f"{itinerary.get('start_date_formatted', '')} – {itinerary.get('end_date_formatted', '')}"
+    destination = itinerary.get("destination", "Destination")
+    subtitle = itinerary.get("cover_subtitle", "Eine Reise voller Eindrücke")
+    parts.append(cover_page(client_display, date_line, destination, subtitle))
+
+    # Landkarte + Reiseübersicht (cover page already ends with page break)
+    if ubersicht_mode != "none":
+        parts.append(map_image_xml())  # Landkarte
+        parts.append(ep())
+        parts.append(build_reiseubersicht_table(itinerary.get("days", [])))
+        parts.append(ep())
+
+    if ubersicht_mode == "only":
+        return "".join(parts)
+
+    # Section heading
+    parts.append(page_break())
+    parts.append(section_heading("IHR PERSÖNLICHER REISEVERLAUF"))
+    parts.append(ep())
+
+    # Truncation warning banner — shown once at the top if AI output was cut off
+    if itinerary.get("_truncated"):
+        parts.append(truncation_warning())
+        parts.append(ep())
+
+    # Days — merge consecutive free days into one combined section
+    def _is_free(day):
+        bullets = day.get("overview_bullets", [])
+        if not bullets:
+            return True
+        low = [b.strip().lower() for b in bullets]
+        return all(b in ("transfer", "anreise", "anreise / flug", "abreise", "flug") for b in low)
+
+    all_days = itinerary.get("days", [])
+    di = 0
+    while di < len(all_days):
+        day = all_days[di]
+        if _is_free(day):
+            # Collect the run of consecutive free days
+            run = [day]
+            while di + 1 < len(all_days) and _is_free(all_days[di + 1]):
+                di += 1
+                run.append(all_days[di])
+
+            if len(run) == 1:
+                # Single free day — render normally but without body text
+                parts.append(day_heading(f"{run[0]['weekday']}, {run[0]['date']}"))
+                parts.append(loc_heading(run[0].get("location_heading", "Zur freien Verfügung")))
+                parts.append(ep())
+            else:
+                # Multiple consecutive free days — merge into one heading
+                first, last = run[0], run[-1]
+                dn_first = first.get("day_number", "")
+                dn_last  = last.get("day_number", "")
+                date_range = f"{first['date']} – {last['date']}"
+                parts.append(day_heading(f"Tag {dn_first} – {dn_last} / {date_range}"))
+                parts.append(loc_heading("Zur freien Verfügung"))
+                parts.append(ep())
+
+            parts.append(ep())
+            di += 1
+            continue
+
+        # Normal day
+        parts.append(day_heading(f"{day['weekday']}, {day['date']}"))
+        parts.append(loc_heading(day.get("location_heading", "")))
+        parts.append(ep())
+
+        body_paras = [p for p in day.get("body_paragraphs", []) if p.strip()]
+        if body_paras:
+            for para_text in body_paras:
+                parts.append(body_para(para_text))
+                parts.append(ep())
+        else:
+            parts.append(missing_text_placeholder())
+            parts.append(ep())
+
+        hotel = day.get("hotel", {})
+        if hotel:
+            hotel_desc = hotel.get("description", "")
+            if hotel.get("is_first_night") and hotel_desc:
+                already_in_body = any(hotel_desc.strip()[:40] in p for p in day.get("body_paragraphs", []))
+                if not already_in_body:
+                    parts.append(body_para(hotel_desc))
+                    parts.append(ep())
+            parts.append(hotel_line(hotel.get("name", "")))
+            parts.append(ep())
+
+        parts.append(ep())
+        di += 1
+
+    # ENDE
+    parts.append(ende_reise())
+    parts.append(ep())
+
+    # Page break → Leistungsübersicht
+    parts.append(page_break())
+
+    # Leistungsübersicht header
+    parts.append(
+        f'<w:p><w:pPr><w:spacing w:after="160"/>'
+        f'<w:rPr>{RPR_GOLD_B_U}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{RPR_GOLD_B_U}</w:rPr>'
+        f'<w:t>LEISTUNGSÜBERSICHT</w:t></w:r></w:p>'
+    )
+
+    l = itinerary.get("leistungen", {})
+    parts.append(label_line("Veranstalter:", "BAWA Tours & Travel"))
+    parts.append(
+        f'<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5670"/></w:tabs>'
+        f'<w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
+    )
+    parts.append(label_line("Reiseteilnehmer:", l.get("reiseteilnehmer", client_display)))
+    parts.append(
+        f'<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5670"/></w:tabs>'
+        f'<w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
+    )
+    parts.append(label_line("Reisedatum:", l.get("reisedatum", date_line)))
+    parts.append(
+        f'<w:p><w:pPr><w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
+    )
+    parts.append(label_line("Reisedauer:", l.get("reisedauer", "")))
+    parts.append(
+        f'<w:p><w:pPr><w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
+    )
+    parts.append(label_line("Reisepreis (bei " + str(itinerary.get("pax", "")) + " Personen):", "EUR ____________ gesamt"))
+    parts.append(
+        f'<w:p><w:pPr><w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
+    )
+
+    # "Inkludierte Leistungen:" heading
+    parts.append(
+        f'<w:p><w:pPr><w:rPr>{RPR_LIST}<w:u w:val="single"/></w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{RPR_LIST}<w:b/><w:u w:val="single"/></w:rPr>'
+        f'<w:t>Inkludierte Leistungen:</w:t></w:r></w:p>'
+    )
+    parts.append(
+        f'<w:p><w:pPr><w:pStyle w:val="Listenabsatz"/>'
+        f'<w:suppressAutoHyphens/><w:jc w:val="both"/>'
+        f'<w:rPr>{RPR_LIST}</w:rPr></w:pPr></w:p>'
+    )
+
+    # ── Build bullets in Python — never trust AI to format these ─────────────
+    dest = itinerary.get("destination", "")
+
+    # 1. Hotel nights first — one bullet per hotel
+    for h in l.get("hotel_nights", []):
+        nights = h.get("nights", "")
+        city   = h.get("city", "")
+        hotel  = h.get("hotel", "")
+        room   = h.get("room_type", "")
+        meal   = h.get("meal_plan", "Frühstück")
+        link   = h.get("link", "")
+        n_word = "Übernachtung" if nights == 1 else "Übernachtungen"
+        hotel_q = '„' + hotel + '“'
+        text   = (
+            f"{nights} {n_word} in {city} im {hotel_q}"
+            + (f" in einem {room}" if room else "")
+            + f" inklusive {meal}"
+        )
+        if link:
+            # Inline hyperlink for hotel
+            rpr_link = f'{RPR_LIST}<w:rStyle w:val="Hyperlink"/>'
+            parts.append(
+                f'<w:p><w:pPr><w:pStyle w:val="Listenabsatz"/>'
+                f'<w:numPr><w:ilvl w:val="0"/><w:numId w:val="16"/></w:numPr>'
+                f'<w:suppressAutoHyphens/>'
+                f'<w:rPr>{RPR_LIST}</w:rPr></w:pPr>'
+                f'<w:r><w:rPr>{RPR_LIST}</w:rPr><w:t xml:space="preserve">{x(text)} (</w:t></w:r>'
+                f'<w:hyperlink r:id="rIdHotel" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                f'<w:r><w:rPr>{rpr_link}</w:rPr><w:t>{x(link)}</w:t></w:r></w:hyperlink>'
+                f'<w:r><w:rPr>{RPR_LIST}</w:rPr><w:t>)</w:t></w:r></w:p>'
+            )
+        else:
+            parts.append(bullet_item(text))
+
+    # 2. Airport transfers
+    parts.append(bullet_item(
+        "Private Flughafentransfers (Ankunft & Abreise) mit Chauffeur"
+    ))
+
+    # 3. Sightseeing programme
+    parts.append(bullet_item(
+        f"Privates Sightseeing- und Ausflugsprogramm {dest} gemäß Reiseverlauf "
+        f"mit eigenem Fahrzeug, Fahrer und englischsprachigem Guide; "
+        f"inklusive Eintrittsgebühren für die genannten Sehenswürdigkeiten"
+    ))
+
+    # 4. Unique experiences
+    for exp in l.get("special_experiences", []):
+        if exp and exp.strip():
+            clean = exp.strip().strip("'\"")
+            if clean:
+                parts.append(bullet_item(clean))
+
+    # 5. Train tickets (if applicable)
+    if l.get("has_train_tickets", False):
+        parts.append(bullet_item(
+            "Zugtickets für alle Shinkansen- und Zugverbindungen in der 1. Klasse"
+        ))
+
+    # 6. Local contact — always last
+    parts.append(bullet_item(
+        f"Örtliche Ansprechpartner / Agentur in {dest}"
+    ))
+
+    # Footer
+    parts.append(f'<w:p><w:pPr><w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>')
+    parts.append(
+        f'<w:p><w:pPr><w:suppressAutoHyphens/><w:jc w:val="both"/>'
+        f'<w:rPr>{RPR_TEAL_I}</w:rPr></w:pPr>'
+        f'<w:r><w:rPr>{RPR_TEAL_I}</w:rPr>'
+        f'<w:t>*Zwischenverkauf und Preisänderungen vorbehalten</w:t></w:r></w:p>'
+    )
+    parts.append(f'<w:p><w:pPr><w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>')
+
+    return "".join(parts)
+
+
+def inject_into_template(body_xml: str, photos: list = None, destination: str = "") -> bytes:
+    """Replace document.xml body in template DOCX, return new DOCX bytes.
+
+    photos: list of dicts with keys 'rid' (str), 'filename' (str), 'data' (bytes), 'mime' (str)
+    destination: used to update the inner-page header country name
+    """
+    template_bytes = TEMPLATE_PATH.read_bytes()
+    with zipfile.ZipFile(io.BytesIO(template_bytes)) as src:
+        doc_xml = src.read("word/document.xml").decode("utf-8")
+        orig_rels = src.read("word/_rels/document.xml.rels").decode("utf-8")
+
+    body_start = doc_xml.index("<w:body>") + len("<w:body>")
+    sect_pr_idx = doc_xml.rindex("<w:sectPr")
+    new_doc = doc_xml[:body_start] + body_xml + doc_xml[sect_pr_idx:]
+
+    # Build updated relationships if photos are provided
+    if photos:
+        rel_entries = []
+        for p in photos:
+            ext = Path(p["filename"]).suffix.lstrip(".").lower()
+            rel_entries.append(
+                f'<Relationship Id="{p["rid"]}" '
+                f'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+                f'Target="media/{p["filename"]}"/>'
+            )
+        new_rels = orig_rels.replace(
+            "</Relationships>",
+            "\n".join(rel_entries) + "\n</Relationships>"
+        )
+        # Determine mime → content-type extension for [Content_Types].xml
+        content_types_additions = set()
+        for p in photos:
+            ext = Path(p["filename"]).suffix.lstrip(".").lower()
+            mime_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                        "gif": "image/gif", "bmp": "image/bmp", "webp": "image/webp"}
+            content_types_additions.add((ext, mime_map.get(ext, "image/jpeg")))
+    else:
+        new_rels = orig_rels
+        content_types_additions = set()
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(template_bytes)) as src:
+        # Find header files that contain the destination name
+        header_files = [n for n in src.namelist() if n.startswith("word/header") and n.endswith(".xml")]
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                if item.filename == "word/document.xml":
+                    dst.writestr(item, new_doc.encode("utf-8"))
+                elif item.filename in header_files:
+                    hdr_xml = src.read(item.filename).decode("utf-8")
+                    import re as _re
+                    # Remove wave background image (anchor with behindDoc="1") from all headers
+                    hdr_xml = _re.sub(
+                        r'<w:r><w:rPr><w:noProof/></w:rPr><w:drawing>'
+                        r'<wp:anchor[^>]*behindDoc="1"[^>]*>.*?</wp:anchor>'
+                        r'</w:drawing></w:r>',
+                        '', hdr_xml, flags=_re.DOTALL
+                    )
+                    # Replace destination name in header1 (default header has country text)
+                    if destination and item.filename.endswith("header1.xml"):
+                        hdr_xml = _re.sub(
+                            r'(<w:t[^>]*>)[A-ZÄÖÜ][A-ZÄÖÜ\s&]{2,30}(</w:t>)',
+                            lambda m: m.group(1) + destination.upper() + m.group(2),
+                            hdr_xml
+                        )
+                    dst.writestr(item, hdr_xml.encode("utf-8"))
+                elif item.filename == "word/_rels/document.xml.rels" and photos:
+                    dst.writestr(item, new_rels.encode("utf-8"))
+                elif item.filename == "[Content_Types].xml" and content_types_additions:
+                    ct_xml = src.read(item.filename).decode("utf-8")
+                    for ext, mime in content_types_additions:
+                        tag = f'Extension="{ext}"'
+                        if tag not in ct_xml:
+                            ct_xml = ct_xml.replace(
+                                "</Types>",
+                                f'<Default Extension="{ext}" ContentType="{mime}"/>\n</Types>'
+                            )
+                    dst.writestr(item, ct_xml.encode("utf-8"))
+                else:
+                    dst.writestr(item, src.read(item.filename))
+
+            # Write photo files into word/media/
+            if photos:
+                for p in photos:
+                    dst.writestr(f"word/media/{p['filename']}", p["data"])
+
+    return buf.getvalue()
+
+
+
+SYSTEM_PROMPT = """You are the senior travel writer for BAWA Tours & Travel, a German ultra-luxury travel agency. Your output will be printed and handed directly to clients. Every word must be impeccable.
+
+Return ONLY a single valid JSON object. No markdown fences. No explanation. Nothing outside the JSON.
+
+---
+LANGUAGE STANDARD — MANDATORY
+---
+The DMC offer defines the schedule, activities, hotels, and sequence. It is NOT a template to translate word-for-word. Treat it as raw input — extract the facts, then rewrite everything in beautiful, idiomatic German FROM SCRATCH.
+
+Core principle: The finished Reiseverlauf must read as if a native German-speaking luxury travel writer composed it. It must never feel translated.
+
+① No literal translation. Restructure sentences to sound natural in German. English sentence structure rarely maps cleanly — invert, combine, or split sentences as needed.
+② Expand sparse DMC entries. A bare entry like "Visit Angkor Wat" becomes 3–4 sentences of atmospheric, factual description — what the place is, why it matters, what the client will experience.
+③ Elevate the register. This is a luxury document for high-end clients. Use rich, evocative vocabulary — "Sie erleben", "Sie entdecken", "ein unvergesslicher Anblick", "inmitten", "beeindruckend", "atemberaubend" — but vary it; never repeat the same phrase.
+④ German flow over literal accuracy. If a direct translation sounds clunky, rewrite it. "dedicated to Vishnu" becomes "dem Gott Vishnu geweiht" — rearranged for rhythm.
+⑤ Vary sentence openings. Never start every paragraph with "Sie besuchen…". Mix: "Im Anschluss…", "Weiter geht es…", "Ein Höhepunkt des Tages…", "Erleben Sie…", "Tauchen Sie ein in…"
+⑥ Connect activities narratively. Where the DMC lists bullet points, write flowing prose guiding the client through the day as a journey, not a checklist.
+⑦ Correct German typography: ä ö ü ß always — NEVER ae/oe/ue/ss. German quotation marks: „so" not "so". Em dash where appropriate.
+⑧ No Anglicisms unless genuinely used in German travel language (Check-in, Transfer = fine; "highlight" → "Höhepunkt").
+
+---
+CARDINAL RULE — WRITING QUALITY
+---
+Standard: GEO SAISON / Condé Nast Traveller Germany. Literate, atmospheric, deeply informed.
+
+!! CRITICAL !! Do NOT paraphrase or translate from the DMC. The DMC is only a list of facts.
+You must write entirely from YOUR OWN knowledge of each place — historical depth, cultural meaning,
+architectural beauty, sensory atmosphere. The DMC tells you WHAT to visit. YOU explain WHY it matters
+and what it feels like to be there.
+
+BANNED phrases (automatic failure if used):
+"Sie können", "Es gibt", "Man kann", "ist bekannt für", "erkunden Sie",
+"traditionelle Küche", "besuchen Sie", "eine Vielzahl", "wunderschön"
+
+---
+SIGHTSEEING PARAGRAPHS — mandatory depth for every named site
+---
+Each named attraction requires ALL of the following woven into flowing prose:
+① Founding year / historical era + the political or spiritual story behind its creation
+② Why it matters — its role in Japanese history, religion, or culture
+③ What makes it architecturally, artistically, or naturally exceptional
+④ UNESCO World Heritage status if it applies
+⑤ A vivid sensory moment: the quality of light at dawn, the scent of cedar and incense,
+   the sound of gravel underfoot, the weight of 800 years of history in a single gate
+⑥ An insight only a deeply informed guide would share — beyond any standard guidebook
+
+EXAMPLE — bad (just paraphrasing DMC):
+"Sie besuchen den Kinkaku-ji, der auch als Goldener Pavillon bekannt ist."
+
+EXAMPLE — required quality:
+"Der Kinkaku-ji entfaltet seine stärkste Wirkung in den Morgenstunden, wenn das erste Licht
+durch die Kiefern bricht und das mit echtem Blattgold verkleidete Obergeschoss im stillen
+Spiegelsee darunter flimmert wie ein Traum. Ursprünglich 1397 als Rückzugsvilla des Shōguns
+Ashikaga Yoshimitsu erbaut — eines Mannes, der in der Ostasien-Politik seiner Zeit nahezu
+kaiserliche Macht besaß — vereint das dreigeschossige Gebäude bewusst drei verschiedene
+Architekturstile: Heian-Aristokratie, Samurai-Ästhetik und reines Zen im obersten Geschoss.
+Was viele nicht wissen: Das heutige Gebäude ist ein Neubau von 1955, errichtet nach dem
+Brandanschlag eines jungen Mönchs, dessen obsessive Liebe zu diesem Bauwerk ins Pathologische
+umgeschlagen war — ein Fall, der Mishima zu seinem Roman 'Der Goldene Pavillon' inspirierte."
+
+---
+LEISURE / FREE DAYS
+---
+Never write "freie Zeit zur Verfügung". Always offer 3–4 specific, named recommendations:
+- Exact street names, restaurant names (note Michelin stars), neighbourhood names
+- State precisely why each is worth the detour — its history, its reputation, its uniqueness
+- Include at least one insider recommendation not in mainstream travel guides
+
+---
+HOTEL DESCRIPTIONS — first night at each hotel only, minimum 5 sentences
+---
+Write from genuine knowledge of the hotel. Include:
+① Its design concept and architectural philosophy — who designed it, what style
+② Exact location and how that shapes the experience (neighbourhood, views, proximity)
+③ One specific named signature: a restaurant name, a spa treatment name, a design feature,
+   a cultural programme, or an award
+④ Its position in the luxury hotel world — Relais & Châteaux, Leading Hotels, Forbes stars,
+   Michelin recognition, or other credentials
+⑤ Why these specific guests will love it — connect it to their journey
+
+---
+JSON SCHEMA
+---
+{
+  "client_name": "Familie Grundler",
+  "destination": "Japan",
+  "start_date": "22.06.2026",
+  "end_date": "02.07.2026",
+  "start_date_formatted": "22. Juni",
+  "end_date_formatted": "02. Juli 2026",
+  "pax": 4,
+  "days": [
+    {
+      "day_number": 1,
+      "weekday": "Montag",
+      "date": "22.06.2026",
+      "location_heading": "Kyoto / Ankunft",
+      "overview_bullets": [
+        "Ankunft am Kansai International Airport",
+        "Privatführung durch den Arashiyama-Bambushain",
+        "Besuch des Kinkaku-ji (Goldener Pavillon)"
+      ],
+      "body_paragraphs": [
+        "Minimum 5-sentence paragraph written from your own deep knowledge...",
+        "Second paragraph — another attraction or aspect of the day...",
+        "Third paragraph if the day has 3+ highlights (omit if only 1-2 activities)"
+      ],
+      "hotel": {
+        "name": "Six Senses Kyoto",
+        "is_first_night": true,
+        "description": "5-sentence hotel portrait. EMPTY STRING on non-first nights at same hotel.",
+        "meal_plan": "Frühstück"
+      }
+    }
+  ],
+  "leistungen": {
+    "reiseteilnehmer": "Familie Grundler (4 Personen)",
+    "reisedatum": "22. Juni bis 02. Juli 2026",
+    "reisedauer": "11 Tage / 10 Übernachtungen",
+    "special_experiences": [
+      "Each unique paid experience as its own short German phrase — e.g. 'Private Rikscha-Fahrt durch den Bambushain Arashiyama'",
+      "'Private Teezeremonie mit einem Kyotoer Teemeister'",
+      "'Privatbesuch im Atelier des Messerschmieds in Sakai'"
+    ],
+    "hotel_nights": [
+      {
+        "nights": 5,
+        "city": "Kyoto",
+        "hotel": "Six Senses Kyoto",
+        "room_type": "Deluxe Junior Suite",
+        "meal_plan": "Frühstück"
+      },
+      {
+        "nights": 1,
+        "city": "Yamashiro-Onsen",
+        "hotel": "Beniya Mukayu",
+        "room_type": "Wakamurasaki Suite (120 sqm)",
+        "meal_plan": "Halbpension"
+      }
+    ],
+    "has_train_tickets": true
+  },
+  "duration_label": "11 Tage / 10 Übernachtungen"
+}
+
+---
+STRUCTURAL RULES
+---
+1. EVERY day from the DMC must be in the JSON — not one day omitted.
+2. overview_bullets: 2–5 short German noun phrases (NOT full sentences) listing the key activities or sights for that day — used in the Reiseübersicht table. Pure transfer or arrival days: just ["Transfer"] or ["Anreise / Flug"]. No full stops. No quotes.
+3. body_paragraphs: min. 3 paragraphs for touring days; min. 2 for arrival/departure.
+   Each paragraph min. 5 sentences of real, substantive content.
+3. hotel.is_first_night = true ONLY on the first night at each hotel.
+   All other nights at same hotel: is_first_night = false, description = "".
+4. No meal mentions in body paragraphs.
+5. hotel_nights: one entry PER hotel, with the exact room type from the DMC and correct night count.
+6. Meal translations: BB/Breakfast→Frühstück | HB/Half Board→Halbpension |
+   FB/Full Board→Vollpension | Ryokan dinner→Halbpension | No meals→ohne Verpflegung.
+7. Weekdays: Montag Dienstag Mittwoch Donnerstag Freitag Samstag Sonntag.
+8. Months: Januar Februar März April Mai Juni Juli August September Oktober November Dezember.
+9. Dates in headings: DD.MM.YYYY. In leistungen reisedatum: "22. Juni bis 02. Juli 2026".
+"""
+
+
+STRUCTURE_PROMPT = """Extract the structure from this DMC travel offer. Return ONLY valid JSON, no markdown, no explanation.
+
+{
+  "client_name": "Familie Grundler",
+  "destination": "Japan",
+  "start_date": "22.06.2026",
+  "end_date": "02.07.2026",
+  "start_date_formatted": "22. Juni",
+  "end_date_formatted": "02. Juli 2026",
+  "pax": 4,
+  "duration_label": "11 Tage / 10 Übernachtungen",
+  "days": [
+    {
+      "day_number": 1,
+      "weekday": "Montag",
+      "date": "22.06.2026",
+      "location_heading": "Kyoto / Ankunft",
+      "is_free_day": false,
+      "overview_bullets": ["Ankunft Kansai International Airport", "Transfer zum Hotel"],
+      "hotel": {
+        "name": "Six Senses Kyoto",
+        "room_type": "Deluxe Junior Suite",
+        "meal_plan": "Frühstück",
+        "is_first_night": true
+      },
+      "activities_raw": "Arrival Kyoto. Transfer to hotel. Evening at leisure."
+    }
+  ],
+  "leistungen": {
+    "reiseteilnehmer": "Familie Grundler (4 Personen)",
+    "reisedatum": "22. Juni bis 02. Juli 2026",
+    "reisedauer": "11 Tage / 10 Übernachtungen",
+    "special_experiences": ["Private Rikscha-Fahrt durch den Bambushain Arashiyama"],
+    "hotel_nights": [
+      {"nights": 5, "city": "Kyoto", "hotel": "Six Senses Kyoto", "room_type": "Deluxe Junior Suite", "meal_plan": "Frühstück"}
+    ],
+    "has_train_tickets": false
+  }
+}
+
+Rules:
+- location_heading: the place name ONLY — "Hakone", "Kyoto", "Tokyo / Ankunft", "Kyoto - Kinosaki Onsen". NEVER describe the activity type here ("Ganztägige Tour in Hakone", "Halbtägige Tour in Kyoto") — that belongs in overview_bullets, not the heading. Use "/ Ankunft" or "/ Abreise" only on the actual arrival/departure day, and "CityA - CityB" only on a day that transfers between two places.
+- overview_bullets: 2-5 short German noun phrases per day. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
+- activities_raw: copy the English DMC text for that day verbatim — do NOT translate or rewrite it. This will be used later for prose generation.
+- hotel.is_first_night = true only on first arrival at each hotel.
+- Weekdays in German. Dates: DD.MM.YYYY.
+- Meal plan: BB→Frühstück, HB→Halbpension, FB→Vollpension, AI→All-inclusive.
+- DO NOT write any body_paragraphs — structure and raw activities only.
+- is_free_day: true if the DMC gives no specific activity for the day (free/leisure/own arrangements). When true, set overview_bullets: ["Freizeit"]. The prose generator will insert the standard free-day line — do NOT write activities.
+- hotel_nights: one entry per hotel (not per day), with correct total nights count.
+- client_name: ALWAYS in German format "Familie [Nachname]" (e.g. Familie Schiff, Familie Grundler). Extract the family name and prefix with "Familie". Never use English ("The X family" or "X Family"). If group name, keep it as-is but in German.
+"""
+
+DAY_PROSE_PROMPT = """You are writing one day of a German-language Reiseverlauf for BAWA Tours & Travel, a German luxury travel agency. Your output will be printed and handed directly to clients.
+
+Return ONLY valid JSON — no markdown, no explanation:
+{"body_paragraphs": ["...", "..."], "hotel_description": "..."}
+
+---
+HOUSE STYLE — based directly on BAWA's own confirmed itineraries
+---
+The examples below are taken from real, sent-to-client BAWA documents. Match this style exactly.
+
+WRITING STYLE:
+- Direct address to the client: "Besuchen Sie...", "Sie erkunden...", "Anschließend spazieren Sie durch..."
+- Each sight or activity gets ONE TO THREE sentences. Most get one or two. Do not write a full paragraph of buildup for a single sight.
+- Get straight to the fact or the action. Do not open with filler like "bietet eine gute Gelegenheit" or "ist eine gute Möglichkeit, um..." — real BAWA documents never use this.
+- No invented framing devices like "Insider-Tipp:" or "Ein interessanter Fakt:" — state the fact as part of the sentence.
+- Use real, checkable specifics: a year, a height, a builder's name, a UNESCO designation. Only state a fact if you are genuinely confident it is accurate.
+- Vary how sentences open, but don't force literary flourish — confident and direct, not ornate.
+
+REAL EXAMPLES FROM BAWA DOCUMENTS (this is the actual target quality and length):
+
+  "Besuchen Sie Harajuku, das mit seinen angesagten Modeboutiquen und zahlreichen Essensmöglichkeiten begeistert. Probieren Sie lokale Snacks, lassen Sie sich von kreativer Streetwear inspirieren und erleben Sie die jugendliche Energie dieses einzigartigen Viertels."
+
+  "Besuch des Tokyo Sky Tree, dem höchsten Fernsehturm der Welt. Er ist 634m hoch und wurde im Jahr 2012 errichtet. Auf zwei Aussichtsgeschossen genießen Sie einen atemberaubenden Blick auf den Großraum Tokyo."
+
+  "Danach überqueren Sie gemeinsam mit Ihrem Guide die größte Kreuzung der Welt am Shibuya Terminal, die vor allem durch den Film „Lost in Translation" weltberühmt wurde."
+
+  "Der Vulkan ist 3.776 Meter hoch und zählt seit 2013 zum UNESCO Weltkulturerbe."
+
+  "Sie beginnen mit dem goldenen Pavillon Kinkakuji (UNESCO Weltkulturerbe), der Ende des 14. Jahrhunderts als Alterssitz für Shogun Ashikaga Yoshimitsu errichtet wurde."
+
+Notice these are short. A famous landmark can run longer — but even those build from short, concrete sentences, not dense paragraphs.
+
+---
+SIGHTSEEING — length and depth
+---
+- A brief DMC mention of a minor stop with no real history behind it → 1-2 sentences. Do not pad it.
+- A landmark with genuine historical, cultural, or architectural significance (a former checkpoint, a centuries-old shrine/temple, a UNESCO site, a bridge tied to a legend, a castle, a major museum) → write 3-5 sentences and cover AT LEAST TWO of:
+  - founding/construction year or era, and who built it or why
+  - its historical role or the story behind it (what it controlled, protected, commemorated, or is famous for)
+  - one specific narrative detail — a legend, a named historical figure, a restoration date, a physical detail (height, material, a named feature)
+  - what the client will concretely see or experience there
+  A single flat sentence ("X war ein wichtiger Kontrollpunkt...") is too thin for a landmark like this — if you have more genuine knowledge, use it, the way you would for a hotel.
+- A famous modern district, crossing, or shopping street (Shibuya Crossing, Ginza, Dotonbori, Harajuku/Takeshita-dori, Times Square-style landmarks) is NOT a "minor stop" just because it has no centuries-old history — these are exactly as well-documented as a temple, just in a different register. Write 2-4 sentences and name at least two concrete, checkable specifics: a named store/department store/landmark building, a pop-culture or film reference that made it famous, a superlative with a real number (busiest crossing — how many people cross at once; a street's length; a district's size), or what specifically the client will do or buy there. "Elegantes Einkaufsviertel mit luxuriösen Boutiquen" names nothing — it could describe any shopping street in the world. Reuse it and the reader learns nothing new.
+- Never write a generic scene-setting sentence that doesn't name a real fact. If you don't have a specific, genuine fact about a place, write only what the client will do there — do not invent atmosphere.
+- Do not repeat the same descriptive adjective across multiple sights (e.g. do not call several things "atemberaubend" or "einzigartig").
+- If the DMC only gives a vague regional description ("full day tour of Hakone", "sightseeing in Nara") without naming specific sights, use your OWN genuine knowledge to name the well-known attractions a guided day trip there would realistically include (e.g. Nikko → Nikko Toshogu Schrein, Shinkyo-Brücke; Nara → Todaiji-Tempel, Nara-Park; Hiroshima/Miyajima → Friedensdenkmal, Itsukushima-Schrein). Name at least one or two real, specific sights — a day must never stay purely generic about the region's reputation with nothing concrete named.
+
+---
+HOTEL DESCRIPTIONS — first night at each hotel only
+---
+Real BAWA hotel descriptions are specific — built from real, checkable facts about that exact property, never generic luxury filler ("bietet eine harmonische Verbindung aus Tradition und Komfort" says nothing — cut it).
+
+For an internationally known brand or any hotel you have real knowledge of (this covers most named international hotels — Andaz, Conrad, Aman, Six Senses, Park Hyatt, Ritz-Carlton and similarly documented properties all qualify), write 4-6 sentences and cover AT LEAST THREE of:
+- opening or major renovation year
+- architect or interior designer
+- one named restaurant, bar, or spa concept
+- exact neighbourhood/building and what that location means for the guest (a landmark, a view, a district)
+- room count or a specific room category/signature suite
+- an award or position in the luxury hotel world (Forbes Travel Guide, Michelin, Relais & Châteaux, Leading Hotels of the World)
+
+  "Seit März 2024 empfängt Janu Tokyo Gäste im kreativen Viertel Azabudai Hills in Minato. Das Hotel bietet 122 elegant gestaltete Zimmer und Suiten des Architekten Jean-Michel Gathy, acht herausragende Restaurants, ein hochmodernes Wellnesscenter sowie einen ruhigen Rückzugsort im Herzen Tokios."
+
+Every sentence must name something SPECIFIC and CHECKABLE: an opening date, an architect, a room count, a named restaurant, a real location detail. A description with only one such sentence is too thin — keep adding real facts until at least three of the categories above are covered.
+
+Close with ONE final sentence stating the property's USP — why BAWA selected this specific hotel for this stay, not generic praise. Ground it in something already named in the description (its exact location relative to what the client will do that day, its design/wellness identity, its scale — intimate vs. grand, its suitability for the traveling party if known from the day's context) rather than inventing a new unrelated claim. Examples of the right register:
+
+  "Damit ist das Hotel der ideale Ausgangspunkt, um die Tempel und Gärten Kyotos zu Fuß zu erkunden."
+  "Die kompakte Zimmerzahl und das durchdachte Design machen es zum idealen Rückzugsort nach ereignisreichen Tagen in der Millionenmetropole."
+  "Für eine Familienreise bietet das Haus mit seinen großzügigen Suiten und dem ruhigen Innenhof genau die Mischung aus Komfort und Privatsphäre, die diesen Aufenthalt besonders macht."
+
+Only for a genuinely small or undocumented property where you truly have nothing beyond the name and city should you drop to 2 sentences using only what you can verify (and skip the USP sentence if there is nothing genuine to ground it in), or return an empty string rather than inventing generic luxury filler.
+
+hotel_description: only on first night at a hotel (is_first_night=true). Empty string on all other nights.
+
+---
+HAUSSTIL-REFERENZEN (IF PRESENT IN THE USER MESSAGE)
+---
+The user message may include a "HAUSSTIL-REFERENZEN" section: real text BAWA
+has already written and sent to clients for this exact hotel or sight.
+
+- Hotel text (no placeholder): use it as the primary source for
+  hotel_description — reuse its facts and phrasing, only trimming or lightly
+  adapting it to fit this stay. Do not invent competing facts. This reference
+  text predates the USP-sentence rule above and will not have one — still
+  append your own closing USP sentence per the HOTEL DESCRIPTIONS rules.
+- Sightseeing text behind a {{SIGHT:n}} placeholder: this exact wording is
+  already approved and MUST be reused verbatim — do not paraphrase, shorten,
+  or rewrite it. Do not write your own sentences about that same sight.
+  Instead place the literal placeholder string (e.g. "{{SIGHT:0}}") as its
+  own element in body_paragraphs, positioned where that sight belongs in the
+  day's narrative. The exact text gets substituted in afterward.
+- A sight marked "bestätigter BAWA-Fakt, aber zu kurz" (no placeholder): treat
+  exactly like the semantic-match case below — a confirmed fact to expand on
+  with real knowledge, not text to reproduce as-is.
+
+Only fall back to your own knowledge for hotels/sights the reference section
+does not cover.
+
+---
+GENERAL LANGUAGE RULES
+---
+- Write entirely in German. Compose original German prose from the facts given — do not translate literally.
+- Correct German typography: ä ö ü ß always — never ae/oe/ue/ss substitutions.
+- German quotation marks „so" not "so".
+- No Anglicisms unless standard in German travel language (Check-in, Transfer are fine).
+- No meal mentions in body paragraphs.
+- Logistics (transfers, trains) stay short and factual: "Treffen Sie Ihren Fahrer für den privaten Transfer zum Bahnhof (ca. 50 Minuten)."
+"""
+
+
+def generate_cover_subtitle(destination: str, overview: str) -> str:
+    """Generate a short evocative German subheading for the cover page."""
+    try:
+        prompt = (
+            f"Schreibe einen kurzen, poetischen deutschen Untertitel (max. 6 Wörter) "
+            f"für eine Luxusreise nach {destination}. "
+            f"Reisehighlights: {overview[:300]}. "
+            f"Kein Anführungszeichen, kein Punkt am Ende. Nur den Untertitel, nichts sonst."
+        )
+        resp = _ai_complete(
+            model=AI_MODEL,
+            temperature=0.9,
+            max_tokens=40,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return resp.choices[0].message.content.strip().strip('"').strip("'").rstrip(".")
+    except Exception:
+        return "Eine Reise voller Eindrücke"
+
+
+def call_ai_structure(dmc_content: str) -> dict:
+    """Fast structure-only extraction — no prose writing.
+
+    A long itinerary (15+ days, each with hotel details, bullets, and raw
+    activity text) can produce a JSON response too large for a modest
+    max_tokens budget — Gemini's output then gets cut off mid-day, silently
+    dropping every day after the cutoff (e.g. an 18-day trip coming back as
+    10 days) rather than raising an error. _repair_truncated_json() salvages
+    whatever completed before the cutoff and flags the result
+    ("_truncated": True) — retry once with a much larger budget when that
+    flag is set, instead of accepting the shorter itinerary.
+    """
+    if len(dmc_content) > 50000:
+        dmc_content = dmc_content[:50000] + "\n[...truncated...]"
+
+    result = None
+    for max_tok in (32000, 60000):
+        response = _ai_complete(
+            model=AI_MODEL,
+            temperature=0.1,
+            max_tokens=max_tok,
+            messages=[
+                {"role": "system", "content": STRUCTURE_PROMPT},
+                {"role": "user",   "content": f"DMC offer:\n\n{dmc_content}"},
+            ],
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            result = json.loads(_repair_truncated_json(raw))
+            if not result.get("_truncated"):
+                return result
+            print(
+                f"[structure] WARNING — output truncated at max_tokens={max_tok} "
+                f"({len(result.get('days', []))} days recovered) — retrying with a larger budget",
+                flush=True,
+            )
+
+    print(
+        f"[structure] WARNING — structure extraction still truncated after retry; "
+        f"returning {len(result.get('days', []))} days. The source document may be unusually long.",
+        flush=True,
+    )
+    return result
+
+
+# Pure logistics bullets carry no sightseeing content — nothing to look up a reference for.
+_LOGISTICS_BULLETS = {"transfer", "anreise", "abreise", "flug", "anreise / flug", "ankunft"}
+
+# Bullets FRAMED as movement/transit — "Transfer zum Bahnhof Kyoto", "Fahrt mit
+# dem Expresszug nach Himeji" — are logistics even though a city or station
+# name survives word-filtering. That surviving name is a waypoint being
+# passed through, not a sight to visit, but keyword/semantic search can't
+# tell the difference: it happily matches "Kyoto" or "Himeji" against ANY
+# stored paragraph that mentions the city, including ones about a completely
+# different attraction there (e.g. a real Imperial Palace visit paragraph
+# getting reused on a day that only passes through Kyoto by train, or a
+# Himeji Castle description getting invented for a day that only changes
+# trains at Himeji station). Detecting the bullet's own framing — is it about
+# going somewhere, or seeing something — catches this regardless of which
+# place name follows.
+_TRANSIT_PREFIXES = (
+    "transfer", "privattransfer", "fahrt mit", "fahrt nach", "weiterfahrt",
+    "rückfahrt", "rückreise", "reise nach", "ankunft", "abreise", "abflug",
+    "check-in", "check-out", "checkin", "checkout",
+)
+
+
+def _is_transit_bullet(bullet: str) -> bool:
+    low = bullet.lower()
+    return any(low.startswith(p) for p in _TRANSIT_PREFIXES)
+
+
+def _map_bullets_to_references(destination: str, location_heading: str, bullets: list) -> list:
+    """Resolve grounding for each overview bullet (one atomic sight/activity)
+    independently: an exact keyword match (verbatim reuse) first, a semantic
+    match (loose style guidance) second, or neither (model uses its own
+    knowledge). Retrieving per-bullet instead of over the whole day's activity
+    text means a day covering 3 sights gets 3 independently-resolved
+    references instead of one fuzzy match for whichever sight's keyword
+    happened to score highest against the combined text.
+
+    Source reference paragraphs often cover more than one sight in a single
+    flowing paragraph (e.g. one stored text mentions both Kinkakuji and
+    Arashiyama together). Resolving bullets independently can then pick that
+    same paragraph for two different bullets, or two different paragraphs
+    that both happen to mention the same sight — repeating it. To prevent
+    that, each bullet's own distinguishing word(s) are tracked, and a
+    candidate reference is rejected if it contains another bullet's
+    distinguishing word — that reference belongs to the other bullet, so
+    this bullet keeps looking (or falls back to the model's own knowledge).
+    """
+    clean_bullets = [
+        b.strip() for b in bullets
+        if (b or "").strip() and (b or "").strip().lower() not in _LOGISTICS_BULLETS
+    ]
+    identity_tokens = {
+        b: (set() if _is_transit_bullet(b) else reference_db.distinguishing_tokens(b))
+        for b in clean_bullets
+    }
+
+    mapped = []
+    used_texts = set()
+    for bullet in clean_bullets:
+        # A bullet with no distinguishing tokens at all (e.g. a generic
+        # scene-setter like "Ganztägige flexible Tour mit englischsprachigem
+        # Guide") names no actual sight — searching for it risks a semantic
+        # match to whatever unrelated city's "guided day tour" text scores
+        # closest. Skip retrieval entirely rather than risk that.
+        if not identity_tokens[bullet]:
+            mapped.append({"bullet": bullet, "exact_text": None, "semantic_text": None})
+            continue
+
+        other_tokens = set()
+        for other, toks in identity_tokens.items():
+            if other != bullet:
+                other_tokens |= toks
+
+        candidates = reference_db.find_exact_sightseeing_matches(
+            destination, bullet, location_heading=location_heading, limit=4
+        )
+        exact_text = next(
+            (c for c in candidates
+             if c not in used_texts and not (reference_db.distinguishing_tokens(c) & other_tokens)),
+            None,
+        )
+        semantic_text = None
+        if exact_text:
+            used_texts.add(exact_text)
+        elif _RAG_ENABLED:
+            try:
+                results = _rag_retrieve(
+                    query=f"{destination} {location_heading} {bullet}",
+                    destination=destination,
+                    top_k=3,
+                )
+                semantic_text = next(
+                    (r["text"] for r in results
+                     if r["text"] not in used_texts
+                     and not (reference_db.distinguishing_tokens(r["text"]) & other_tokens)),
+                    None,
+                )
+                if semantic_text:
+                    used_texts.add(semantic_text)
+            except Exception:
+                pass  # Semantic retrieval is a nice-to-have — never block generation on it
+        mapped.append({"bullet": bullet, "exact_text": exact_text, "semantic_text": semantic_text})
+    return mapped
+
+
+# A stored exact-match paragraph shorter than this is a genuine BAWA fact,
+# but often just one thin sentence carried over from a source document that
+# itself under-wrote that sight — locking it in verbatim (as longer matches
+# are) would cap every future itinerary mentioning that sight at the same
+# one-liner. Below the threshold, the text is handed to the model as a
+# factual seed to build on instead of a quote to reproduce untouched.
+MIN_VERBATIM_CHARS = 180
+
+
+def _build_sight_mapping_prompt(mapping: list) -> tuple:
+    """Builds the per-sight grounding section of the prompt from
+    _map_bullets_to_references' output. Returns (prompt_text, exact_texts) —
+    exact_texts is the flat list used afterward to substitute {{SIGHT:n}}
+    placeholders with the real verbatim text. Short exact matches (see
+    MIN_VERBATIM_CHARS) are inlined as expandable fact seeds instead and
+    never enter exact_texts, since there's no placeholder for the model to
+    leave alone."""
+    if not mapping:
+        return "", []
+    lines = [
+        "SEHENSWÜRDIGKEITEN DIESES TAGES — JEDER Programmpunkt MUSS in body_paragraphs "
+        "vorkommen, auch wenn keine Referenz gefunden wurde (dann aus eigenem Wissen "
+        "schreiben, siehe SIGHTSEEING-Regeln oben). Lass keinen der folgenden Punkte aus:"
+    ]
+    exact_texts = []
+    for m in mapping:
+        if m["exact_text"] and len(m["exact_text"]) >= MIN_VERBATIM_CHARS:
+            idx = len(exact_texts)
+            exact_texts.append(m["exact_text"])
+            lines.append(
+                f"- {m['bullet']}: EXAKTE REFERENZ gefunden — MUSS wortwörtlich übernommen werden. "
+                f"Füge an passender Stelle in body_paragraphs genau den Platzhalter \"{{{{SIGHT:{idx}}}}}\" "
+                f"als eigenständiges Element ein, ohne weiteren Text davor oder danach."
+            )
+        elif m["exact_text"]:
+            lines.append(
+                f"- {m['bullet']}: bestätigter BAWA-Fakt, aber zu kurz für einen vollständigen Absatz — "
+                f"NICHT wörtlich übernehmen. Nutze ihn als gesicherten Ausgangspunkt und ergänze mit "
+                f"weiterem echtem Wissen (siehe SIGHTSEEING-Regeln oben), bis ein vollständiger Absatz "
+                f"entsteht:\n  {m['exact_text']}"
+            )
+        elif m["semantic_text"]:
+            lines.append(
+                f"- {m['bullet']}: ähnlicher BAWA-Text als Stil-Vorbild (Ton/Wortwahl übernehmen, "
+                f"NICHT wörtlich kopieren, keine abweichenden Fakten erfinden):\n  {m['semantic_text']}"
+            )
+        else:
+            lines.append(
+                f"- {m['bullet']}: keine Referenz gefunden — schreibe aus eigenem, echtem Wissen "
+                f"(siehe SIGHTSEEING-Regeln oben)."
+            )
+    return "\n".join(lines), exact_texts
+
+
+def _find_missing_bullets(mapping: list, body_paragraphs: list) -> list:
+    """Returns the bullets from `mapping` whose name doesn't appear anywhere
+    in the generated prose — a concrete, measurable sign the model dropped a
+    programme point instead of writing about it. Used both to log a warning
+    and to drive one retry attempt in call_ai_day()."""
+    joined = " ".join(body_paragraphs).lower()
+    missing = []
+    for m in mapping:
+        words = [w.lower() for w in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{4,}", m["bullet"])]
+        if words and not any(re.search(rf"\b{re.escape(w)}\b", joined) for w in words):
+            missing.append(m["bullet"])
+    return missing
+
+
+def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dict:
+    """Generate prose for a single day. Returns {body_paragraphs, hotel_description}."""
+    # Free days get the standard fixed line only — no AI call, no invented
+    # suggestions ("Besuchen Sie zum Beispiel Ginza, oder Asakusa..."). Real
+    # BAWA documents just say "Genießen Sie die freie Zeit in {city}." and
+    # stop there. Skipped if the user typed a manual override in the editor.
+    if day.get("is_free_day") and not day_text_override.strip():
+        location = day.get("location_heading", "").strip()
+        line = f"Genießen Sie die freie Zeit in {location}." if location else "Genießen Sie die freie Zeit."
+        return {"body_paragraphs": [line], "hotel_description": ""}
+
+    activities = day_text_override.strip() or day.get("activities_raw", "")
+    # day["hotel"] is explicitly None (not just missing) for hotel-less days
+    # (e.g. the departure day) — .get("hotel", {}) doesn't fall back to {} in
+    # that case since the key IS present, it just crashed on .get() below.
+    hotel = day.get("hotel") or {}
+    is_first_night = hotel.get("is_first_night", False)
+
+    user_msg = (
+        f"Destination: {destination}\n"
+        f"Day {day['day_number']}: {day['weekday']}, {day['date']}\n"
+        f"Location: {day['location_heading']}\n"
+        f"Activities (English source): {activities}\n"
+        f"Hotel: {hotel.get('name', 'none')} — is_first_night: {is_first_night}\n"
+        f"Room: {hotel.get('room_type', '')}, Meal plan: {hotel.get('meal_plan', '')}\n"
+    )
+
+    ref_hotel_name = hotel.get("name", "") if is_first_night else ""
+    hotel_ref = reference_db.find_hotel_reference(destination, ref_hotel_name) if ref_hotel_name else None
+
+    mapping = _map_bullets_to_references(destination, day.get("location_heading", ""), day.get("overview_bullets", []))
+    sight_block, exact_matches = _build_sight_mapping_prompt(mapping)
+
+    if hotel_ref or sight_block:
+        user_msg += (
+            "\n\nHAUSSTIL-REFERENZEN — bereits verwendete BAWA-Formulierungen aus echten, "
+            "versendeten Reiseverläufen:\n\n"
+        )
+        if hotel_ref:
+            user_msg += (
+                f"[Hotel – {ref_hotel_name}]\n{hotel_ref}\n\n"
+                "Für den Hotel-Eintrag: nutze ihn als Grundlage für hotel_description, übernimm Fakten "
+                "und Tonfall, kürze/passe nur leicht an. Erfinde keine abweichenden Fakten.\n\n"
+            )
+        if sight_block:
+            user_msg += sight_block
+
+    def _generate(msg: str) -> dict:
+        for max_tok in (6000, 4000):
+            try:
+                response = _ai_complete(
+                    model=AI_MODEL,
+                    temperature=0.45,
+                    max_tokens=max_tok,
+                    messages=[
+                        {"role": "system", "content": DAY_PROSE_PROMPT},
+                        {"role": "user",   "content": msg},
+                    ],
+                )
+                break
+            except Exception as e:
+                if ("413" in str(e) or "rate_limit" in str(e).lower()) and max_tok != 4000:
+                    continue
+                raise
+
+        raw = response.choices[0].message.content.strip()
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = json.loads(_repair_truncated_json(raw))
+
+        if exact_matches:
+            parsed["body_paragraphs"] = _substitute_sight_placeholders(
+                parsed.get("body_paragraphs", []), exact_matches
+            )
+        return parsed
+
+    day_label = f"Day {day.get('day_number', '?')} ({day.get('date', '')})"
+    result = _generate(user_msg)
+
+    # Enforce the "every bullet must appear" instruction, not just assert it:
+    # if a programme point is still missing, retry once naming exactly what
+    # was dropped. Bounds cost to at most one extra call per day.
+    missing = _find_missing_bullets(mapping, result.get("body_paragraphs", []))
+    if missing:
+        retry_msg = user_msg + (
+            "\n\nDeine vorherige Antwort hat folgende Programmpunkte NICHT erwähnt: "
+            f"{', '.join(missing)}. Schreibe body_paragraphs erneut und ergänze diese "
+            "— alle bereits abgedeckten Punkte bleiben ebenfalls erhalten."
+        )
+        try:
+            retry_result = _generate(retry_msg)
+            still_missing = _find_missing_bullets(mapping, retry_result.get("body_paragraphs", []))
+            if len(still_missing) < len(missing):
+                result = retry_result
+                missing = still_missing
+        except Exception:
+            pass  # keep the first attempt if the retry itself fails
+
+    for bullet in missing:
+        print(f"[day-prose] WARNING — {day_label}: bullet {bullet!r} not found in generated text even after retry", flush=True)
+
+    return result
+
+
+_SIGHT_PLACEHOLDER_RE = re.compile(r"\{\{SIGHT:(\d+)\}\}")
+
+
+def _substitute_sight_placeholders(paragraphs: list, exact_matches: list) -> list:
+    """Replace {{SIGHT:n}} placeholders with the exact reference text.
+
+    Matches the model didn't place are dropped, not force-appended: the model
+    sees the day's actual activities and is better positioned than a keyword
+    match to judge whether a candidate reference is really about this day —
+    force-including an unused match risked describing a site the client
+    never visits (a keyword false-positive from find_exact_sightseeing_matches).
+    """
+    final = []
+    for p in paragraphs:
+        m = _SIGHT_PLACEHOLDER_RE.fullmatch(p.strip())
+        if m:
+            idx = int(m.group(1))
+            if 0 <= idx < len(exact_matches):
+                final.append(exact_matches[idx])
+                continue
+        final.append(p)
+    return final
+
+
+def call_ai(dmc_content: str, day_text: str = "") -> dict:
+    if day_text.strip():
+        user_msg = (
+            "=== DMC STRUCTURE (dates, hotels, sequence) ===\n"
+            f"{dmc_content}\n\n"
+            "=== ENGLISH DAY TEXT — PRIMARY PROSE SOURCE ===\n"
+            "Use this English text as your main source for writing the German body_paragraphs. "
+            "Extract every activity, sight, experience, and detail mentioned here. "
+            "Do NOT translate it — compose original German prose from these facts.\n\n"
+            f"{day_text}"
+        )
+    else:
+        user_msg = f"DMC itinerary content:\n\n{dmc_content}"
+
+    # Free tier rate limits apply. Try progressively smaller max_tokens if rate-limited.
+    for max_tok in (8000, 6000, 4000):
+        try:
+            response = _ai_complete(
+                model=AI_MODEL,
+                temperature=0.4,
+                max_tokens=max_tok,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": user_msg},
+                ],
+            )
+            break  # success
+        except Exception as e:
+            if "413" in str(e) or "rate_limit" in str(e).lower() or "too large" in str(e).lower():
+                if max_tok == 4000:
+                    raise  # exhausted all retries
+                continue   # try next smaller limit
+            raise          # non-rate-limit error — propagate immediately
+
+    raw = response.choices[0].message.content.strip()
+    # Strip markdown fences if present
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    # If output was truncated mid-JSON, attempt recovery by closing open structures
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        repaired = _repair_truncated_json(raw)
+        result = json.loads(repaired)
+        result["_truncated"] = True
+        return result
+
+
+def _repair_truncated_json(raw: str) -> str:
+    """Close any unclosed JSON structures caused by token-limit truncation."""
+    # Truncate to last complete top-level value boundary we can find
+    # Strategy: count open braces/brackets and close them
+    depth_brace   = 0
+    depth_bracket = 0
+    in_string     = False
+    escape_next   = False
+    last_safe     = 0
+
+    for i, ch in enumerate(raw):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth_brace += 1
+        elif ch == '}':
+            depth_brace -= 1
+            if depth_brace == 0 and depth_bracket == 0:
+                last_safe = i + 1
+        elif ch == '[':
+            depth_bracket += 1
+        elif ch == ']':
+            depth_bracket -= 1
+            if depth_brace == 0 and depth_bracket == 0:
+                last_safe = i + 1
+
+    # Close open arrays then objects
+    closing = ']' * depth_bracket + '}' * depth_brace
+    if closing:
+        # Find a reasonable truncation point: last complete key-value or array item
+        # Remove trailing partial value (comma, unfinished string, etc.)
+        truncated = raw.rstrip().rstrip(',').rstrip()
+        # If we're inside an unclosed string, close it
+        open_strings = truncated.count('"') - truncated.count('\\"')
+        if open_strings % 2 == 1:
+            truncated += '"'
+        result = json.loads(truncated + closing)
+        result["_truncated"] = True
+        return json.dumps(result)
+    return raw

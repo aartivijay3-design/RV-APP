@@ -1,0 +1,25 @@
+# Secrets — never commit
+.env
+
+# Machine-specific local config
+.python_path.txt
+
+# Generated at runtime — persisted via Railway Volume in production,
+# not tracked in git either way
+output/
+
+# Cached RAG embeddings — rebuilt automatically on first run if missing
+data/reference_library.npy
+
+# Python
+__pycache__/
+*.pyc
+
+# Runtime logs and leftover test-generated documents (not source)
+*.log
+test_conf_output.docx
+test_confirmation.docx
+
+# Portable tool binaries downloaded for local/manual use, not part of the app
+cloudflared.exe
+railway-cli/

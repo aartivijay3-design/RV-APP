@@ -1,0 +1,2830 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BAWA Reiseverlauf Generator</title>
+  <style>
+    /* ── Tokens ── */
+    :root {
+      --teal:      #0B3A43;
+      --teal-mid:  #144f5a;
+      --teal-lite: #e8f1f3;
+      --gold:      #9C8138;
+      --gold-lite: #f7f2e8;
+      --white:     #ffffff;
+      --grey-100:  #f5f5f5;
+      --grey-200:  #e8e8e8;
+      --grey-500:  #888;
+      --radius:    10px;
+      --shadow:    0 4px 24px rgba(11,58,67,.10);
+    }
+
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--grey-100);
+      color: var(--teal);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--teal);
+      color: var(--white);
+      padding: 0 40px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    header .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header .logo-mark {
+      width: 36px; height: 36px;
+      background: var(--gold);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; color: var(--white);
+      letter-spacing: 1px;
+    }
+    header h1 {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: .3px;
+    }
+    header .subtitle {
+      font-size: 12px;
+      opacity: .7;
+      margin-top: 1px;
+    }
+    header .badge {
+      background: var(--gold);
+      color: var(--white);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: .5px;
+    }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 20px 60px;
+      gap: 28px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card-header {
+      background: var(--teal-lite);
+      border-bottom: 2px solid var(--gold);
+      padding: 18px 28px;
+    }
+    .card-header h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--teal);
+      text-transform: uppercase;
+      letter-spacing: .8px;
+    }
+    .card-header p {
+      font-size: 13px;
+      color: var(--grey-500);
+      margin-top: 3px;
+    }
+    .card-body { padding: 28px; }
+
+    /* ── Form card ── */
+    .form-card { width: 520px; }
+
+    /* ── Page-level tab bar ── */
+    .page-tab-bar {
+      display: flex;
+      background: var(--white);
+      border-bottom: 2px solid var(--grey-200);
+      padding: 0 40px;
+    }
+    .page-tab {
+      padding: 12px 24px;
+      border: none;
+      border-bottom: 3px solid transparent;
+      background: none;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--grey-500);
+      cursor: pointer;
+      margin-bottom: -2px;
+      transition: all .2s;
+    }
+    .page-tab.active {
+      color: var(--teal);
+      border-bottom-color: var(--gold);
+    }
+    .page-tab:hover:not(.active) { color: var(--teal); }
+
+    /* ── Page panels ── */
+    .page-panel { display: none; width: 100%; }
+    .page-panel.active { display: flex; flex-direction: column; }
+
+    /* ── Confirmation form ── */
+    .conf-grid {
+      display: flex;
+      gap: 28px;
+      align-items: flex-start;
+      width: 100%;
+      justify-content: center;
+      padding: 40px 20px 60px;
+    }
+    .conf-card { width: 520px; }
+    .conf-info-card { width: 280px; }
+    select.field-select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid var(--grey-200);
+      border-radius: 6px;
+      font-size: 14px;
+      color: var(--teal);
+      background: var(--white);
+      outline: none;
+      transition: border-color .2s;
+      cursor: pointer;
+    }
+    select.field-select:focus { border-color: var(--gold); }
+    .dmc-manage-btn {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--gold);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+    }
+    .dmc-editor {
+      display: none;
+      margin-top: 10px;
+    }
+    .dmc-editor textarea {
+      width: 100%;
+      height: 180px;
+      font-size: 12px;
+      font-family: monospace;
+      border: 1.5px solid var(--grey-200);
+      border-radius: 6px;
+      padding: 10px;
+      resize: vertical;
+      outline: none;
+    }
+    .dmc-editor textarea:focus { border-color: var(--gold); }
+    .dmc-save-btn {
+      margin-top: 6px;
+      padding: 6px 14px;
+      background: var(--teal);
+      color: var(--white);
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* ── Tab bar (within form) ── */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 9px 12px;
+      border: 1.5px solid var(--grey-200);
+      background: var(--grey-100);
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--grey-500);
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .tab-btn.active {
+      background: var(--teal);
+      color: var(--white);
+      border-color: var(--teal);
+    }
+    .tab-btn:hover:not(.active) {
+      border-color: var(--teal);
+      color: var(--teal);
+    }
+
+    /* ── Paste textarea ── */
+    #paste-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--grey-200);
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: var(--teal);
+      resize: vertical;
+      outline: none;
+      transition: border-color .2s;
+      line-height: 1.6;
+    }
+    #paste-input:focus { border-color: var(--gold); }
+    .paste-hint {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: var(--gold-lite);
+      border-left: 3px solid var(--gold);
+      border-radius: 0 6px 6px 0;
+      font-size: 12px;
+      color: var(--teal);
+      line-height: 1.6;
+    }
+    .paste-hint strong { color: var(--gold); }
+
+    /* ── Day text expander ── */
+    .day-text-section { margin-top: 20px; }
+    .day-text-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      color: var(--teal);
+      padding: 10px 14px;
+      background: var(--gold-lite);
+      border: 1.5px solid var(--grey-200);
+      border-radius: var(--radius);
+      transition: border-color .2s;
+    }
+    .day-text-toggle:hover { border-color: var(--gold); }
+    .day-text-toggle .arrow { transition: transform .2s; display: inline-block; }
+    .day-text-toggle.open .arrow { transform: rotate(90deg); }
+    .day-text-toggle .badge {
+      margin-left: auto;
+      background: var(--gold);
+      color: #fff;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 20px;
+      letter-spacing: .3px;
+    }
+    .day-text-body {
+      display: none;
+      margin-top: 8px;
+    }
+    .day-text-body.open { display: block; }
+    #day-text-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--grey-200);
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: var(--teal);
+      resize: vertical;
+      outline: none;
+      transition: border-color .2s;
+      line-height: 1.6;
+    }
+    #day-text-input:focus { border-color: var(--gold); }
+    .day-text-hint {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #777;
+      line-height: 1.5;
+    }
+
+    /* ── Drop zone ── */
+    .drop-zone {
+      border: 2px dashed var(--grey-200);
+      border-radius: var(--radius);
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--gold);
+      background: var(--gold-lite);
+    }
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .drop-zone .icon {
+      font-size: 38px;
+      margin-bottom: 10px;
+    }
+    .drop-zone .label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--teal);
+    }
+    .drop-zone .hint {
+      font-size: 12px;
+      color: var(--grey-500);
+      margin-top: 4px;
+    }
+    .file-name {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--gold);
+      font-weight: 600;
+      display: none;
+    }
+
+    /* ── Form elements ── */
+    .field { margin-top: 20px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--teal);
+      margin-bottom: 6px;
+    }
+    .field .hint-text {
+      font-size: 11px;
+      color: var(--grey-500);
+      margin-bottom: 6px;
+    }
+    .field input[type="text"] {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid var(--grey-200);
+      border-radius: 6px;
+      font-size: 14px;
+      color: var(--teal);
+      outline: none;
+      transition: border-color .2s;
+    }
+    .field input[type="text"]:focus {
+      border-color: var(--gold);
+    }
+
+    /* ── Photo slots ── */
+    .photo-slots { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+    .photo-slot {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--grey-100); border: 1.5px solid var(--grey-200);
+      border-radius: 8px; padding: 8px 12px;
+    }
+    .photo-slot-label {
+      font-size: 11px; font-weight: 700; color: var(--teal);
+      text-transform: uppercase; letter-spacing: .5px; min-width: 44px;
+    }
+    .photo-slot input[type="file"] {
+      flex: 1; font-size: 13px; color: var(--teal); cursor: pointer;
+      border: none; background: transparent; outline: none;
+    }
+    .photo-slot-thumb {
+      width: 44px; height: 39px; object-fit: cover;
+      border-radius: 4px; border: 1px solid var(--grey-200); display: none;
+    }
+    .photo-slot-remove {
+      background: none; border: none; cursor: pointer;
+      color: #aaa; font-size: 18px; line-height: 1; padding: 0 2px;
+    }
+    .photo-slot-remove:hover { color: #c0392b; }
+    .btn-add-photo {
+      font-size: 13px; font-weight: 600; color: var(--teal);
+      background: none; border: 1.5px dashed var(--teal);
+      border-radius: 7px; padding: 7px 14px; cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-add-photo:hover { background: var(--teal-lite); }
+
+    /* ── Submit button ── */
+    .btn-generate {
+      margin-top: 24px;
+      width: 100%;
+      padding: 14px;
+      background: var(--teal);
+      color: var(--white);
+      border: none;
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: .5px;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .btn-generate:hover:not(:disabled) { background: var(--teal-mid); }
+    .btn-generate:active:not(:disabled) { transform: scale(.98); }
+    .btn-generate:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Progress ── */
+    .progress-wrap {
+      margin-top: 24px;
+      display: none;
+    }
+    .progress-label {
+      font-size: 13px;
+      color: var(--teal);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--grey-200);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-bar-track {
+      height: 6px;
+      background: var(--grey-200);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--gold);
+      border-radius: 3px;
+      width: 0%;
+      transition: width .4s ease;
+    }
+    .progress-steps {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--grey-500);
+    }
+
+    /* ── Success / Error ── */
+    .result-box {
+      margin-top: 20px;
+      padding: 16px 18px;
+      border-radius: var(--radius);
+      display: none;
+    }
+    .result-box.success {
+      background: #eaf7ec;
+      border: 1.5px solid #5cb85c;
+    }
+    .result-box.error {
+      background: #fdf0f0;
+      border: 1.5px solid #d9534f;
+    }
+    .result-box .result-title {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    .result-box.success .result-title { color: #2d7a30; }
+    .result-box.error .result-title { color: #c0392b; }
+    .result-box p { font-size: 13px; color: #444; }
+
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 10px 20px;
+      background: var(--gold);
+      color: var(--white);
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .2s;
+    }
+    .btn-download:hover { background: #7a6428; }
+
+    /* ── Info card ── */
+    .info-card { width: 280px; }
+    .step {
+      display: flex;
+      gap: 14px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--grey-200);
+    }
+    .step:last-child { border-bottom: none; }
+    .step-num {
+      flex-shrink: 0;
+      width: 28px; height: 28px;
+      background: var(--teal);
+      color: var(--white);
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .step-text strong {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--teal);
+    }
+    .step-text span {
+      font-size: 12px;
+      color: var(--grey-500);
+      line-height: 1.5;
+    }
+
+    .tip-box {
+      margin-top: 20px;
+      background: var(--gold-lite);
+      border-left: 3px solid var(--gold);
+      padding: 12px 14px;
+      border-radius: 0 6px 6px 0;
+      font-size: 12px;
+      color: var(--teal);
+      line-height: 1.6;
+    }
+    .tip-box strong { display: block; margin-bottom: 4px; font-size: 12px; color: var(--gold); }
+
+    /* ── Calendar tab ── */
+    .cal-hotel-card {
+      border: 1.5px solid var(--grey-200);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    .cal-hotel-card:last-child { margin-bottom: 0; }
+    .cal-hotel-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--teal);
+    }
+    .cal-hotel-dates {
+      font-size: 12px;
+      color: var(--gold);
+      font-weight: 600;
+      margin-top: 3px;
+    }
+    .cal-hotel-meta {
+      font-size: 12px;
+      color: var(--grey-500);
+      margin-top: 6px;
+    }
+    .cal-hotel-notes {
+      font-size: 12px;
+      color: var(--teal);
+      background: var(--gold-lite);
+      border-left: 3px solid var(--gold);
+      padding: 6px 10px;
+      border-radius: 0 6px 6px 0;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    .cal-add-btn { margin-top: 12px; }
+    .cal-flight-card { border-left: 3px solid var(--teal); }
+    .cal-trip-card {
+      border: 2px solid var(--gold);
+      background: var(--gold-lite);
+    }
+    .cal-trip-card .cal-hotel-name { font-size: 16px; }
+    .cal-trip-hint {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--grey-500);
+      line-height: 1.5;
+    }
+    .cal-detail-heading {
+      margin: 20px 0 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--grey-500);
+    }
+    .cal-detail-card { opacity: .85; }
+
+    /* ── Datenbank tab ── */
+    .db-entry-card {
+      border: 1.5px solid var(--grey-200);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .db-entry-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .db-entry-type {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: var(--teal-lite);
+      color: var(--teal);
+    }
+    .db-entry-type.hotel { background: var(--gold-lite); color: var(--gold); }
+    .db-entry-heading { font-size: 13px; font-weight: 700; color: var(--teal); }
+    .db-entry-dest { font-size: 11px; color: var(--grey-500); margin-left: auto; }
+    .db-entry-text {
+      font-size: 12px;
+      color: #444;
+      line-height: 1.5;
+      max-height: 60px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .db-entry-actions { display: flex; gap: 8px; }
+    .db-entry-actions button {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+    }
+    .db-entry-edit { background: var(--teal-lite); color: var(--teal); }
+    .db-entry-edit:hover { background: var(--grey-200); }
+    .db-entry-delete { background: #fdf0f0; color: #c0392b; }
+    .db-entry-delete:hover { background: #f6d5d5; }
+
+    /* ── History ── */
+    .history-card {
+      width: 820px;
+      margin-top: 28px;
+    }
+    #history-list {
+      list-style: none;
+    }
+    #history-list li {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--grey-200);
+      font-size: 13px;
+    }
+    #history-list li:last-child { border-bottom: none; }
+    #history-list .h-icon { font-size: 20px; }
+    #history-list .h-name { flex: 1; font-weight: 600; color: var(--teal); }
+    #history-list .h-time { color: var(--grey-500); font-size: 12px; }
+    #history-list .h-dl {
+      padding: 5px 12px;
+      background: var(--teal-lite);
+      color: var(--teal);
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+    }
+    #history-list .h-dl:hover { background: var(--grey-200); }
+    #no-history { font-size: 13px; color: var(--grey-500); font-style: italic; }
+
+    /* ── Day editor cards ── */
+    .day-card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .day-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      background: var(--teal);
+      color: #fff;
+      cursor: pointer;
+      user-select: none;
+    }
+    .day-card-header .day-num {
+      background: var(--gold);
+      border-radius: 50%;
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
+    .day-card-header .day-title { flex: 1; }
+    .day-card-header .day-date { font-size: 12px; opacity: .75; }
+    .day-card-header .day-location { font-size: 14px; font-weight: 600; }
+    .day-card-header .day-status {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.18);
+      white-space: nowrap;
+    }
+    .day-card-header .day-status.done { background: #2e7d32; }
+    .day-card-header .day-status.error { background: #c00; }
+    .day-card-header .chevron { font-size: 11px; transition: transform .2s; }
+    .day-card.open .chevron { transform: rotate(180deg); }
+    .day-card-body { display: none; padding: 20px; }
+    .day-card.open .day-card-body { display: block; }
+    .day-textarea {
+      width: 100%;
+      min-height: 220px;
+      padding: 14px;
+      border: 1.5px solid var(--grey-200);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: var(--teal);
+      line-height: 1.7;
+      resize: vertical;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .day-textarea:focus { border-color: var(--gold); }
+    .day-textarea.generating {
+      background: repeating-linear-gradient(
+        90deg, var(--teal-lite) 0, var(--grey-100) 50%, var(--teal-lite) 100%
+      );
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite linear;
+      color: #999;
+    }
+    @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    .day-card-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      align-items: center;
+    }
+    .btn-regen {
+      padding: 7px 16px;
+      background: var(--teal-lite);
+      color: var(--teal);
+      border: 1.5px solid var(--grey-200);
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-regen:hover { background: var(--grey-200); }
+    .btn-regen:disabled { opacity: .45; cursor: default; }
+    .day-hint { font-size: 12px; color: var(--grey-500); }
+    .day-hotel-line {
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: var(--gold-lite);
+      border-left: 3px solid var(--gold);
+      border-radius: 0 6px 6px 0;
+      font-size: 12px;
+      color: var(--teal);
+    }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 11px;
+      color: var(--grey-500);
+      background: var(--white);
+      border-top: 1px solid var(--grey-200);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      main { flex-direction: column; align-items: center; }
+      .form-card, .info-card, .history-card { width: 100%; max-width: 520px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="brand">
+    <div class="logo-mark">BT</div>
+    <div>
+      <h1>BAWA Tours &amp; Travel</h1>
+      <div class="subtitle">Interne Tools</div>
+    </div>
+  </div>
+  <div class="badge">Internal Tool</div>
+</header>
+
+<!-- ── Page tabs ── -->
+<div class="page-tab-bar">
+  <button class="page-tab active" id="ptab-rv"   onclick="showPage('rv')">✈ Reiseverlauf Generator</button>
+  <button class="page-tab"        id="ptab-conf" onclick="showPage('conf')">📋 Confirmation Generator</button>
+  <button class="page-tab"        id="ptab-cal"  onclick="showPage('cal')">📅 Kalender</button>
+</div>
+
+<!-- ── Main ── -->
+<main>
+<!-- ════════════════════════════════════════ PAGE: REISEVERLAUF ══ -->
+<div class="page-panel active" id="page-rv" style="flex-direction:column;gap:0;padding:0;">
+
+  <!-- ── STEP 1: Upload panel ── -->
+  <div id="rv-step1" style="display:flex;flex-direction:row;gap:28px;padding:40px 20px 60px;justify-content:center;align-items:flex-start;flex-wrap:wrap;">
+
+    <!-- Upload card -->
+    <div class="card form-card">
+      <div class="card-header">
+        <h2>Neuen Reiseverlauf erstellen</h2>
+        <p>DMC-Angebot hochladen → Tage prüfen → Word herunterladen</p>
+      </div>
+      <div class="card-body">
+        <form id="upload-form" onsubmit="return false;">
+
+          <!-- Tab switcher -->
+          <div class="tab-bar">
+            <button type="button" class="tab-btn active" id="tab-file" onclick="switchTab('file')">📎 Datei hochladen</button>
+            <button type="button" class="tab-btn" id="tab-paste" onclick="switchTab('paste')">📋 Text einfügen</button>
+          </div>
+
+          <!-- File upload -->
+          <div id="panel-file">
+            <div class="drop-zone" id="drop-zone">
+              <input type="file" id="file-input" accept=".xlsx,.xls,.docx,.pdf,.txt,.jpg,.jpeg,.png"/>
+              <div class="icon">📄</div>
+              <div class="label">DMC-Angebot hier ablegen</div>
+              <div class="hint">Excel · Word · PDF · Text · JPG · PNG</div>
+            </div>
+            <div class="file-name" id="file-name">📎 <span id="file-name-text"></span></div>
+          </div>
+
+          <!-- Paste text -->
+          <div id="panel-paste" style="display:none;">
+            <textarea id="paste-input"
+              placeholder="DMC-Text hier einfügen…" rows="10"></textarea>
+          </div>
+
+          <!-- Client name -->
+          <div class="field">
+            <label>Kundenname (optional)</label>
+            <div class="hint-text">Leer lassen — wird automatisch ermittelt</div>
+            <input type="text" id="client-name" placeholder="z.B. Familie Schiff"/>
+          </div>
+
+          <!-- Analyse button -->
+          <button type="button" class="btn-generate" id="analyse-btn" onclick="analyseStructure()">
+            <span id="analyse-icon">🔍</span>
+            <span id="analyse-text">DMC analysieren</span>
+          </button>
+
+          <!-- Progress -->
+          <div class="progress-wrap" id="progress-wrap" style="display:none;">
+            <div class="progress-label">
+              <div class="spinner"></div>
+              <span id="progress-label-text">Struktur wird erkannt…</span>
+            </div>
+          </div>
+
+          <!-- Error -->
+          <div class="result-box" id="upload-error-box" style="display:none;">
+            <div class="result-title" style="color:#c00;">✗ Fehler</div>
+            <p id="upload-error-msg"></p>
+          </div>
+
+        </form>
+      </div>
+    </div>
+
+    <!-- Info card -->
+    <div class="card info-card">
+      <div class="card-header"><h2>So funktioniert es</h2></div>
+      <div class="card-body">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-text"><strong>DMC hochladen &amp; analysieren</strong><span>Struktur, Daten und Hotels werden erkannt.</span></div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-text"><strong>Text pro Tag prüfen &amp; bearbeiten</strong><span>KI schreibt jeden Tag einzeln — Sie können direkt im Browser korrigieren.</span></div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-text"><strong>Word herunterladen</strong><span>Fertiges .docx im BAWA-Layout.</span></div>
+        </div>
+        <div class="tip-box">
+          <strong>💡 Hinweis</strong>
+          Jeder Tag wird einzeln generiert — Token-Limit-Fehler gehören der Vergangenheit an.<br/>
+          Alle Daten bleiben im Büronetzwerk.
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end step1 -->
+
+  <!-- ── STEP 2: Editor panel ── -->
+  <div id="rv-step2" style="display:none;flex-direction:column;min-height:100vh;background:var(--grey-100);">
+
+    <!-- Editor toolbar -->
+    <div id="editor-toolbar" style="
+      position:sticky;top:0;z-index:100;
+      background:var(--teal);color:#fff;
+      display:flex;align-items:center;gap:16px;
+      padding:12px 32px;box-shadow:0 2px 8px rgba(0,0,0,.25);">
+      <button onclick="backToUpload()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;">← Zurück</button>
+      <div style="flex:1;">
+        <div id="editor-title" style="font-weight:700;font-size:15px;"></div>
+        <div id="editor-subtitle" style="font-size:12px;opacity:.75;"></div>
+      </div>
+      <div id="gen-status" style="font-size:13px;opacity:.85;"></div>
+      <button id="build-btn" onclick="buildDocx()" style="
+        background:var(--gold);border:none;color:#fff;
+        padding:10px 22px;border-radius:8px;cursor:pointer;
+        font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;">
+        ⬇ Word erstellen
+      </button>
+    </div>
+
+    <!-- Cover page fields -->
+    <div style="background:#f0f5f6;border-bottom:1px solid #c8d8db;padding:14px 32px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <span style="font-size:12px;font-weight:600;color:#0B3A43;white-space:nowrap;">Titelseite:</span>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <label style="font-size:11px;color:#666;">Land / Destination</label>
+        <input type="text" id="cover-destination" placeholder="z.B. Japan"
+          style="padding:6px 10px;border:1px solid #b0c4c8;border-radius:6px;font-size:13px;font-family:inherit;color:#0B3A43;width:180px;font-weight:600;"
+          oninput="if(currentStructure)currentStructure.destination=this.value">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <label style="font-size:11px;color:#666;">Untertitel</label>
+        <input type="text" id="cover-subtitle" placeholder="z.B. Eine Reise voller Eindrücke"
+          style="padding:6px 10px;border:1px solid #b0c4c8;border-radius:6px;font-size:13px;font-family:inherit;color:#0B3A43;width:300px;"
+          oninput="if(currentStructure)currentStructure.cover_subtitle=this.value">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;">
+        <label style="font-size:11px;color:#666;">Reisende</label>
+        <input type="text" id="cover-client" placeholder="z.B. Familie Müller"
+          style="padding:6px 10px;border:1px solid #b0c4c8;border-radius:6px;font-size:13px;font-family:inherit;color:#0B3A43;width:220px;"
+          oninput="if(currentStructure)currentStructure.client_name=this.value">
+      </div>
+    </div>
+
+    <!-- Options row -->
+    <div style="background:#fff;border-bottom:1px solid #e0e0e0;padding:10px 32px;display:flex;align-items:center;gap:24px;font-size:13px;color:var(--teal);">
+      <span style="font-weight:600;">Reiseübersicht:</span>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:5px;">
+        <input type="radio" name="ubersicht-mode" value="both" checked> Übersicht + Verlauf
+      </label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:5px;">
+        <input type="radio" name="ubersicht-mode" value="only"> Nur Übersicht
+      </label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:5px;">
+        <input type="radio" name="ubersicht-mode" value="none"> Ohne Übersicht
+      </label>
+      <div id="days-warning" style="display:none;margin-left:auto;background:#fff3cd;border:1px solid #ffc107;color:#856404;padding:4px 12px;border-radius:6px;font-size:12px;"></div>
+    </div>
+
+    <!-- Day cards -->
+    <div id="day-cards" style="padding:28px 32px;display:flex;flex-direction:column;gap:20px;max-width:900px;margin:0 auto;width:100%;"></div>
+
+    <!-- Add day button -->
+    <div style="padding:0 32px 32px;max-width:900px;margin:0 auto;width:100%;box-sizing:border-box;">
+      <button onclick="addDayCard()" style="
+        width:100%;padding:12px;border:2px dashed #b0c4c8;background:transparent;
+        color:#0B3A43;border-radius:8px;cursor:pointer;font-size:14px;
+        font-family:inherit;transition:background .15s;">
+        + Tag hinzufügen
+      </button>
+    </div>
+
+    <!-- Download result -->
+    <div id="docx-result" style="display:none;padding:20px 32px;max-width:900px;margin:0 auto;width:100%;">
+      <div class="result-box" style="display:block;">
+        <div class="result-title" id="docx-result-title"></div>
+        <p id="docx-result-msg"></p>
+        <a class="btn-download" id="docx-download-btn" href="#" download style="display:none;">⬇ Reiseverlauf herunterladen</a>
+      </div>
+    </div>
+
+    <!-- ═══════════════ Referenzdatenbank (scroll down while editing) ═══════════════ -->
+    <div style="padding:0 32px 40px;max-width:900px;margin:0 auto;width:100%;box-sizing:border-box;">
+      <div class="card" id="db-section">
+        <div class="card-header" style="cursor:pointer;display:flex;align-items:center;gap:10px;" onclick="dbToggleSection()">
+          <span id="db-section-chevron" style="font-size:12px;transition:transform .2s;">▶</span>
+          <div>
+            <h2>📚 Referenzdatenbank</h2>
+            <p>Hotel- oder Sehenswürdigkeitsbeschreibungen ergänzen oder korrigieren — wirkt sich sofort auf künftige Reiseverläufe aus</p>
+          </div>
+        </div>
+        <div class="card-body" id="db-section-body" style="display:none;">
+
+          <div class="tab-bar">
+            <button type="button" class="tab-btn active" id="db-mode-manual" onclick="dbSwitchMode('manual')">✍ Manuell hinzufügen</button>
+            <button type="button" class="tab-btn" id="db-mode-upload" onclick="dbSwitchMode('upload')">📄 Dokument einlesen</button>
+          </div>
+
+          <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:16px;">
+
+            <!-- Left: add / upload -->
+            <div style="flex:1;min-width:340px;">
+
+              <!-- Manual add/edit form -->
+              <div id="db-panel-manual">
+                <div class="field" style="margin-top:0;">
+                  <label id="db-form-title-lbl">Neuen Eintrag hinzufügen</label>
+                  <div class="tab-bar" style="margin-top:8px;">
+                    <button type="button" class="tab-btn active" id="db-type-hotel" onclick="dbSetType('hotel')">🏨 Hotel</button>
+                    <button type="button" class="tab-btn" id="db-type-sightseeing" onclick="dbSetType('sightseeing')">🏯 Sehenswürdigkeit</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Land / Destination</label>
+                  <input type="text" id="db-destination" list="db-destination-list" placeholder="z.B. Japan"/>
+                  <datalist id="db-destination-list"></datalist>
+                </div>
+                <div class="field">
+                  <label id="db-heading-label">Hotelname</label>
+                  <div class="hint-text" id="db-heading-hint">Wie das Hotel in der DMC-Vorlage benannt ist</div>
+                  <input type="text" id="db-heading" placeholder="z.B. Aman Tokyo"/>
+                </div>
+                <div class="field">
+                  <label>Beschreibung</label>
+                  <div class="hint-text">Wird künftig wortwörtlich übernommen, wenn ein Reiseverlauf dieses Hotel bzw. diesen Ort erwähnt</div>
+                  <textarea id="db-text" rows="7" style="width:100%;padding:12px 14px;border:1.5px solid var(--grey-200);border-radius:var(--radius);font-size:13px;font-family:inherit;color:var(--teal);resize:vertical;outline:none;line-height:1.6;"></textarea>
+                </div>
+                <button type="button" class="btn-generate" id="db-save-btn" onclick="dbSaveEntry()">
+                  <span id="db-save-icon">💾</span>
+                  <span id="db-save-text">Eintrag speichern</span>
+                </button>
+                <button type="button" class="dmc-manage-btn" id="db-cancel-edit-btn" style="display:none;margin-top:10px;" onclick="dbCancelEdit()">
+                  ✕ Bearbeiten abbrechen
+                </button>
+                <div class="result-box" id="db-result-box">
+                  <div class="result-title" id="db-result-title"></div>
+                  <p id="db-result-msg"></p>
+                </div>
+              </div>
+
+              <!-- Upload & parse document -->
+              <div id="db-panel-upload" style="display:none;">
+                <div class="field" style="margin-top:0;">
+                  <label>Land / Destination</label>
+                  <div class="hint-text">Gilt für alle in diesem Dokument gefundenen Einträge</div>
+                  <input type="text" id="db-up-destination" list="db-destination-list" placeholder="z.B. Japan"/>
+                </div>
+                <div class="tab-bar">
+                  <button type="button" class="tab-btn active" id="db-up-tab-file" onclick="dbUpSwitchTab('file')">📎 Datei</button>
+                  <button type="button" class="tab-btn" id="db-up-tab-paste" onclick="dbUpSwitchTab('paste')">📋 Text einfügen</button>
+                </div>
+                <div id="db-up-panel-file">
+                  <div class="drop-zone" id="db-up-drop-zone">
+                    <input type="file" id="db-up-file-input" accept=".docx,.pdf,.txt"/>
+                    <div class="icon">📄</div>
+                    <div class="label">Reiseverlauf hier ablegen</div>
+                    <div class="hint">Word (.docx) · PDF · Text</div>
+                  </div>
+                  <div class="file-name" id="db-up-file-name">📎 <span id="db-up-file-name-text"></span></div>
+                </div>
+                <div id="db-up-panel-paste" style="display:none;">
+                  <textarea id="db-up-paste-input" placeholder="Reiseverlauf-Text hier einfügen…" rows="8"
+                    style="width:100%;padding:12px 14px;border:1.5px solid var(--grey-200);border-radius:var(--radius);font-size:13px;font-family:inherit;color:var(--teal);resize:vertical;outline:none;line-height:1.6;"></textarea>
+                </div>
+                <button type="button" class="btn-generate" id="db-up-parse-btn" onclick="dbParseDocument()">
+                  <span>🔍</span><span id="db-up-parse-text">Einlesen</span>
+                </button>
+                <div class="result-box" id="db-up-result-box">
+                  <div class="result-title" id="db-up-result-title"></div>
+                  <p id="db-up-result-msg"></p>
+                </div>
+
+                <!-- Candidate review list -->
+                <div id="db-up-candidates" style="display:none;margin-top:18px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                    <span style="font-size:12px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.5px;">Gefundene Absätze — prüfen &amp; auswählen</span>
+                    <span id="db-up-candidates-count" style="font-size:11px;color:var(--grey-500);"></span>
+                  </div>
+                  <div id="db-up-candidates-list" style="display:flex;flex-direction:column;gap:10px;max-height:520px;overflow-y:auto;"></div>
+                  <button type="button" class="btn-generate" id="db-up-save-btn" style="margin-top:14px;" onclick="dbSaveCandidates()">
+                    <span>💾</span><span id="db-up-save-text">Ausgewählte speichern</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Right: browse / search -->
+            <div style="flex:1;min-width:340px;">
+              <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+                <select class="field-select" id="db-filter-destination" style="flex:1;min-width:140px;" onchange="dbSearch()">
+                  <option value="">Alle Länder</option>
+                </select>
+                <select class="field-select" id="db-filter-type" style="flex:1;min-width:120px;" onchange="dbSearch()">
+                  <option value="">Alle Typen</option>
+                  <option value="hotel">Hotel</option>
+                  <option value="sightseeing">Sehenswürdigkeit</option>
+                </select>
+              </div>
+              <input type="text" id="db-filter-query" placeholder="Suche in Name, Ort oder Text…"
+                style="width:100%;padding:10px 14px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:14px;color:var(--teal);outline:none;margin-bottom:14px;"
+                oninput="dbSearchDebounced()"/>
+              <div id="db-results-count" style="font-size:12px;color:var(--grey-500);margin-bottom:10px;"></div>
+              <div id="db-results" style="display:flex;flex-direction:column;gap:10px;max-height:640px;overflow-y:auto;"></div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end step2 -->
+
+<!-- ═══ Shared "quick save to database" modal, opened from a day card ═══ -->
+<div id="db-quick-modal" style="display:none;position:fixed;inset:0;background:rgba(11,58,67,.55);z-index:200;align-items:center;justify-content:center;">
+  <div class="card" style="width:520px;max-width:92vw;max-height:85vh;overflow-y:auto;">
+    <div class="card-header">
+      <h2 id="db-quick-title">In Datenbank speichern</h2>
+      <p>Wird künftig für dieses Hotel bzw. diesen Ort wortwörtlich übernommen</p>
+    </div>
+    <div class="card-body">
+      <div class="field" style="margin-top:0;">
+        <label>Land / Destination</label>
+        <input type="text" id="db-quick-destination" list="db-destination-list"/>
+      </div>
+      <div class="field">
+        <label id="db-quick-heading-label">Bezeichnung</label>
+        <input type="text" id="db-quick-heading"/>
+      </div>
+      <div class="field">
+        <label>Beschreibung</label>
+        <textarea id="db-quick-text" rows="8" style="width:100%;padding:12px 14px;border:1.5px solid var(--grey-200);border-radius:var(--radius);font-size:13px;font-family:inherit;color:var(--teal);resize:vertical;outline:none;line-height:1.6;"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button type="button" class="btn-generate" style="margin-top:0;" onclick="dbQuickSaveConfirm()">💾 Speichern</button>
+        <button type="button" class="dmc-manage-btn" onclick="dbQuickSaveClose()">Abbrechen</button>
+      </div>
+      <div class="result-box" id="db-quick-result-box">
+        <div class="result-title" id="db-quick-result-title"></div>
+        <p id="db-quick-result-msg"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end page-rv -->
+
+<!-- ════════════════════════════════════════ PAGE: CONFIRMATION ══ -->
+<div class="page-panel" id="page-conf">
+<div class="conf-grid">
+
+  <!-- Confirmation form card -->
+  <div class="card conf-card">
+    <div class="card-header">
+      <h2>Confirmation erstellen</h2>
+      <p>Rechnung hochladen → Bestätigungsdokument herunterladen</p>
+    </div>
+    <div class="card-body">
+      <form id="conf-form">
+
+        <!-- Input tabs -->
+        <div class="tab-bar">
+          <button type="button" class="tab-btn active" id="ctab-file" onclick="confSwitchTab('file')">
+            📎 Rechnung hochladen
+          </button>
+          <button type="button" class="tab-btn" id="ctab-paste" onclick="confSwitchTab('paste')">
+            📋 Text einfügen
+          </button>
+        </div>
+
+        <!-- File upload -->
+        <div id="cpanel-file">
+          <div class="drop-zone" id="conf-drop-zone">
+            <input type="file" id="conf-file-input" name="file"
+                   accept=".pdf,.docx,.xlsx,.txt"/>
+            <div class="icon">🧾</div>
+            <div class="label">Rechnung hier ablegen</div>
+            <div class="hint">PDF · Word (.docx) · Excel · Text (.txt)</div>
+          </div>
+          <div class="file-name" id="conf-file-name">📎 <span id="conf-file-name-text"></span></div>
+        </div>
+
+        <!-- Paste text -->
+        <div id="cpanel-paste" style="display:none;">
+          <textarea id="conf-paste-input" name="pasted_text"
+            placeholder="Rechnungstext hier einfügen — aus PDF kopieren oder direkt aus dem System.
+
+Tipp: PDF öffnen → Strg+A → Strg+C → hier einfügen."
+            rows="12"></textarea>
+          <div class="paste-hint">
+            <strong>Tipp:</strong> PDF öffnen → Strg+A → Strg+C → hier einfügen.
+          </div>
+        </div>
+
+        <!-- DMC selection -->
+        <div class="field" style="margin-top:20px;">
+          <label>Destination / DMC auswählen</label>
+          <div class="hint-text">Wählen Sie den lokalen Partner für diese Reise</div>
+          <select class="field-select" id="dmc-destination" onchange="loadDmcOptions()">
+            <option value="">-- Destination wählen --</option>
+          </select>
+          <select class="field-select" id="dmc-select" style="margin-top:8px;">
+            <option value="">-- DMC wählen --</option>
+          </select>
+          <button type="button" class="dmc-manage-btn" onclick="toggleDmcEditor()">
+            ⚙ DMC-Liste bearbeiten
+          </button>
+          <div class="dmc-editor" id="dmc-editor">
+            <div style="font-size:11px;color:var(--grey-500);margin-bottom:4px;">
+              JSON-Format bearbeiten — Änderungen werden gespeichert
+            </div>
+            <textarea id="dmc-json-editor"></textarea>
+            <button type="button" class="dmc-save-btn" onclick="saveDmcList()">
+              💾 Speichern
+            </button>
+          </div>
+        </div>
+
+        <!-- Guide info -->
+        <div class="field">
+          <label>Deutschsprachiger Guide (optional)</label>
+          <input type="text" id="guide-name" placeholder="Name des Guides"/>
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <label>Guide Telefonnummer</label>
+          <input type="text" id="guide-phone" placeholder="+91 99821 24636"/>
+        </div>
+
+        <!-- Submit -->
+        <button type="submit" class="btn-generate" id="conf-submit-btn">
+          <span id="conf-btn-icon">📋</span>
+          <span id="conf-btn-text">Confirmation generieren</span>
+        </button>
+
+        <!-- Progress -->
+        <div class="progress-wrap" id="conf-progress-wrap">
+          <div class="progress-label">
+            <div class="spinner"></div>
+            <span>Rechnung wird verarbeitet…</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="conf-progress-bar"></div>
+          </div>
+        </div>
+
+        <!-- Result -->
+        <div class="result-box" id="conf-result-box">
+          <div class="result-title" id="conf-result-title"></div>
+          <p id="conf-result-msg"></p>
+          <a class="btn-download" id="conf-download-btn" style="display:none" href="#" download>
+            ⬇ Confirmation herunterladen
+          </a>
+          <button class="btn-download" id="conf-reset-btn"
+                  style="display:none;background:var(--teal);margin-left:8px;" type="button">
+            ↩ Neu
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- Info card -->
+  <div class="card conf-info-card">
+    <div class="card-header">
+      <h2>So funktioniert es</h2>
+    </div>
+    <div class="card-body">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">
+          <strong>Rechnung hochladen</strong>
+          <span>PDF, Word oder Text aus der Rechnung einfügen.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">
+          <strong>DMC auswählen</strong>
+          <span>Lokalen Partner für dieses Zielland wählen.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">
+          <strong>Guide eintragen</strong>
+          <span>Optional: Name und Nummer des deutschen Guides.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-text">
+          <strong>Dokument herunterladen</strong>
+          <span>Fertiges .docx — Buchungsnummern manuell ergänzen.</span>
+        </div>
+      </div>
+      <div class="tip-box">
+        <strong>💡 Hinweis</strong>
+        Buchungsnummern der Hotels werden als [Buchungsnr.] vorbelegt — bitte manuell im Word-Dokument ergänzen.<br/><br/>
+        DMC-Liste unter ⚙ bearbeiten und neue Partner hinzufügen.
+      </div>
+    </div>
+  </div>
+
+</div><!-- end conf-grid -->
+</div><!-- end page-conf -->
+
+<!-- ════════════════════════════════════════ PAGE: KALENDER ══ -->
+<div class="page-panel" id="page-cal">
+<div class="conf-grid">
+
+  <!-- Calendar form card -->
+  <div class="card conf-card">
+    <div class="card-header">
+      <h2>Kalender-Termin erstellen</h2>
+      <p>Confirmation oder Rechnung hochladen → ein Termin "Kunde – Land" für den Google Kalender</p>
+    </div>
+    <div class="card-body">
+      <form id="cal-form">
+
+        <!-- Input tabs -->
+        <div class="tab-bar">
+          <button type="button" class="tab-btn active" id="caltab-file" onclick="calSwitchTab('file')">
+            📎 Datei hochladen
+          </button>
+          <button type="button" class="tab-btn" id="caltab-paste" onclick="calSwitchTab('paste')">
+            📋 Text einfügen
+          </button>
+        </div>
+
+        <!-- File upload -->
+        <div id="calpanel-file">
+          <div class="drop-zone" id="cal-drop-zone">
+            <input type="file" id="cal-file-input" name="file"
+                   accept=".pdf,.docx,.xlsx,.txt"/>
+            <div class="icon">🧾</div>
+            <div class="label">Confirmation oder Rechnung hier ablegen</div>
+            <div class="hint">PDF · Word (.docx) · Excel · Text (.txt)</div>
+          </div>
+          <div class="file-name" id="cal-file-name">📎 <span id="cal-file-name-text"></span></div>
+        </div>
+
+        <!-- Paste text -->
+        <div id="calpanel-paste" style="display:none;">
+          <textarea id="cal-paste-input" name="pasted_text"
+            placeholder="Text hier einfügen — aus PDF oder Word kopieren.
+
+Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
+            rows="12"></textarea>
+          <div class="paste-hint">
+            <strong>Tipp:</strong> Dokument öffnen → Strg+A → Strg+C → hier einfügen.
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <button type="submit" class="btn-generate" id="cal-submit-btn">
+          <span id="cal-btn-icon">🔍</span>
+          <span id="cal-btn-text">Dokument analysieren</span>
+        </button>
+
+        <!-- Progress -->
+        <div class="progress-wrap" id="cal-progress-wrap">
+          <div class="progress-label">
+            <div class="spinner"></div>
+            <span>Dokument wird analysiert…</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="cal-progress-bar"></div>
+          </div>
+        </div>
+
+        <!-- Result -->
+        <div class="result-box" id="cal-result-box">
+          <div class="result-title" id="cal-result-title"></div>
+          <p id="cal-result-msg"></p>
+        </div>
+
+      </form>
+
+      <!-- Extracted hotel stays → one Google Calendar event each -->
+      <div id="cal-events"></div>
+
+    </div>
+  </div>
+
+  <!-- Info card -->
+  <div class="card conf-info-card">
+    <div class="card-header">
+      <h2>So funktioniert es</h2>
+    </div>
+    <div class="card-body">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">
+          <strong>Dokument hochladen</strong>
+          <span>Confirmation oder Rechnung als PDF, Word oder Text.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">
+          <strong>Hotels prüfen</strong>
+          <span>Kunde, Reisedaten und Hotelaufenthalte werden erkannt.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">
+          <strong>Zum Kalender hinzufügen</strong>
+          <span>Google Kalender öffnet sich mit vorausgefülltem Termin "Kunde – Land".</span>
+        </div>
+      </div>
+      <div class="tip-box">
+        <strong>💡 Hinweis</strong>
+        Es wird ein Termin pro Reise angelegt, betitelt "Kunde – Land" und über den gesamten Reisezeitraum. Alle Hotels (und Flüge, falls vorhanden) stehen in der Termin-Beschreibung. Im Google-Fenster bitte den Kalender „Kunden" auswählen — Reisen ganz ohne Hotel (nur Flüge) funktionieren ebenfalls.
+      </div>
+    </div>
+  </div>
+
+</div><!-- end conf-grid -->
+</div><!-- end page-cal -->
+
+</main>
+
+<!-- ── Footer ── -->
+<footer>
+  BAWA Tours &amp; Travel · Internes Tool · Nicht für externe Weitergabe
+</footer>
+
+<script>
+  // ── Photo slots for Reiseübersicht ────────────────────────────────────
+  let photoSlotCount = 0;
+
+  function addPhotoSlot() {
+    photoSlotCount++;
+    const idx = photoSlotCount;
+    const slotsEl = document.getElementById('photo-slots');
+
+    const slot = document.createElement('div');
+    slot.className = 'photo-slot';
+    slot.id = `photo-slot-${idx}`;
+    slot.innerHTML = `
+      <span class="photo-slot-label">Tag ${idx}</span>
+      <input type="file" name="photos" accept="image/jpeg,image/png,image/jpg"
+             onchange="previewSlotPhoto(this, ${idx})"/>
+      <img class="photo-slot-thumb" id="thumb-${idx}" alt="Vorschau"/>
+      <button type="button" class="photo-slot-remove" title="Entfernen"
+              onclick="removePhotoSlot(${idx})">×</button>
+    `;
+    slotsEl.appendChild(slot);
+  }
+
+  function removePhotoSlot(idx) {
+    const slot = document.getElementById(`photo-slot-${idx}`);
+    if (slot) slot.remove();
+    // Re-number remaining slots visually
+    document.querySelectorAll('.photo-slot').forEach((el, i) => {
+      el.querySelector('.photo-slot-label').textContent = `Tag ${i + 1}`;
+    });
+  }
+
+  function previewSlotPhoto(input, idx) {
+    const thumb = document.getElementById(`thumb-${idx}`);
+    if (!thumb) return;
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        thumb.src = e.target.result;
+        thumb.style.display = 'block';
+      };
+      reader.readAsDataURL(input.files[0]);
+    } else {
+      thumb.style.display = 'none';
+    }
+  }
+
+  // ── Tab switching ──────────────────────────────────────────────────────
+  let activeTab = 'file';
+  function switchTab(tab) {
+    activeTab = tab;
+    document.getElementById('panel-file').style.display  = tab === 'file'  ? 'block' : 'none';
+    document.getElementById('panel-paste').style.display = tab === 'paste' ? 'block' : 'none';
+    document.getElementById('tab-file').classList.toggle('active',  tab === 'file');
+    document.getElementById('tab-paste').classList.toggle('active', tab === 'paste');
+  }
+
+  // ── File input refs ────────────────────────────────────────────────────
+  const fileInput   = document.getElementById('file-input');
+  const dropZone    = document.getElementById('drop-zone');
+  const fileNameEl  = document.getElementById('file-name');
+  const fileNameTxt = document.getElementById('file-name-text');
+
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) showFile(fileInput.files[0].name); });
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) { fileInput.files = e.dataTransfer.files; showFile(e.dataTransfer.files[0].name); }
+  });
+  function showFile(name) {
+    fileNameTxt.textContent = name;
+    fileNameEl.style.display = 'block';
+    dropZone.querySelector('.label').textContent = 'Datei ausgewählt';
+  }
+
+  // ── Global state ───────────────────────────────────────────────────────
+  let currentStructure = null;   // itinerary structure from /extract-structure
+  let dayTexts = {};             // {dayIndex: "edited text…"}
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  STEP 1 — Analyse structure
+  // ══════════════════════════════════════════════════════════════════════
+  async function analyseStructure() {
+    const pasteText = document.getElementById('paste-input').value.trim();
+    if (activeTab === 'file' && !fileInput.files[0]) {
+      alert('Bitte eine Datei auswählen oder auf "Text einfügen" wechseln.'); return;
+    }
+    if (activeTab === 'paste' && !pasteText) {
+      alert('Bitte DMC-Text einfügen.'); return;
+    }
+
+    const btn = document.getElementById('analyse-btn');
+    const progress = document.getElementById('progress-wrap');
+    const errorBox = document.getElementById('upload-error-box');
+    errorBox.style.display = 'none';
+    btn.disabled = true;
+    document.getElementById('analyse-text').textContent = 'Analysiert…';
+    document.getElementById('analyse-icon').textContent = '⏳';
+    progress.style.display = 'block';
+    document.getElementById('progress-label-text').textContent = 'Struktur wird erkannt…';
+
+    const fd = new FormData();
+    if (activeTab === 'file' && fileInput.files[0]) fd.append('file', fileInput.files[0]);
+    if (activeTab === 'paste') fd.append('pasted_text', pasteText);
+    const cn = document.getElementById('client-name').value.trim();
+    if (cn) fd.append('client_name', cn);
+
+    try {
+      const res = await fetch('/extract-structure', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Server-Fehler');
+      }
+      currentStructure = await res.json();
+      progress.style.display = 'none';
+      showEditor();
+      if (currentStructure._truncated) {
+        alert(
+          `Achtung: Das DMC-Dokument war so lang, dass die KI-Antwort abgeschnitten wurde. ` +
+          `Es wurden nur ${(currentStructure.days || []).length} Tage erkannt — bitte mit dem ` +
+          `Original-Dokument abgleichen und ggf. fehlende Tage manuell über "+ Tag hinzufügen" ergänzen.`
+        );
+      }
+    } catch(err) {
+      progress.style.display = 'none';
+      errorBox.style.display = 'block';
+      document.getElementById('upload-error-msg').textContent = err.message;
+    } finally {
+      btn.disabled = false;
+      document.getElementById('analyse-text').textContent = 'DMC analysieren';
+      document.getElementById('analyse-icon').textContent = '🔍';
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  STEP 2 — Show editor with day cards
+  // ══════════════════════════════════════════════════════════════════════
+  function showEditor() {
+    document.getElementById('rv-step1').style.display = 'none';
+    document.getElementById('rv-step2').style.display = 'flex';
+
+    const s = currentStructure;
+    document.getElementById('editor-title').textContent =
+      `${s.client_name || 'Reiseverlauf'} — ${s.destination || ''}`;
+    document.getElementById('editor-subtitle').textContent =
+      `${s.start_date_formatted || ''} – ${s.end_date_formatted || ''} · ${s.duration_label || ''}`;
+
+    // Populate cover page fields
+    document.getElementById('cover-destination').value = s.destination || '';
+    document.getElementById('cover-subtitle').value = s.cover_subtitle || 'Eine Reise voller Eindrücke';
+    document.getElementById('cover-client').value = s.client_name || '';
+
+    renderDayCards();
+    generateAllDays();
+
+    // Missing days warning
+    const warnEl = document.getElementById('days-warning');
+    if (s.start_date && s.end_date && s.days) {
+      try {
+        const parseDate = d => { const [day,mon,yr] = d.split('.'); return new Date(yr,mon-1,day); };
+        const start = parseDate(s.start_date_formatted || s.start_date);
+        const end   = parseDate(s.end_date_formatted   || s.end_date);
+        const expectedDays = Math.round((end - start) / 86400000) + 1;
+        const actualDays   = s.days.length;
+        if (expectedDays > actualDays + 1) {
+          warnEl.textContent = `⚠ ${actualDays} Tage erkannt, erwartet ~${expectedDays} (${s.start_date_formatted} – ${s.end_date_formatted})`;
+          warnEl.style.display = 'block';
+        } else {
+          warnEl.style.display = 'none';
+        }
+      } catch(e) { warnEl.style.display = 'none'; }
+    }
+  }
+
+  function backToUpload() {
+    document.getElementById('rv-step2').style.display = 'none';
+    document.getElementById('rv-step1').style.display = 'flex';
+    document.getElementById('docx-result').style.display = 'none';
+    currentStructure = null; dayTexts = {};
+  }
+
+  // ── Render all day cards (empty / shimmer state) ───────────────────────
+  function renderDayCards() {
+    const container = document.getElementById('day-cards');
+    container.innerHTML = '';
+    const days = currentStructure.days || [];
+    days.forEach((day, i) => {
+      const card = document.createElement('div');
+      card.className = 'day-card open';
+      card.id = `day-card-${i}`;
+      const hotel = day.hotel || {};
+      const hotelHtml = hotel.name
+        ? `<div class="day-hotel-line">🏨 ${hotel.name}${hotel.room_type ? ' · ' + hotel.room_type : ''}${hotel.meal_plan ? ' · ' + hotel.meal_plan : ''}
+            <input type="url" id="hotel-link-${i}" placeholder="Hotel-Website URL (optional)"
+              value="${hotel.link || ''}"
+              style="display:block;margin-top:6px;width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid #c8d8db;border-radius:5px;font-size:12px;font-family:inherit;color:#333;">
+            <textarea id="hotel-desc-${i}" placeholder="Hotelbeschreibung erscheint hier nach der Generierung…"
+              style="display:block;margin-top:8px;width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8d8db;border-radius:5px;font-size:12px;font-family:inherit;color:#333;resize:vertical;min-height:70px;">${hotel.description || ''}</textarea>
+            <button class="btn-regen" style="margin-top:6px;" onclick="dbQuickSaveOpen('hotel', ${i})">💾 Hotelbeschreibung in Datenbank speichern</button>
+           </div>`
+        : '';
+      card.innerHTML = `
+        <div class="day-card-header" onclick="toggleCard(${i})">
+          <div class="day-num">${day.day_number}</div>
+          <div class="day-title">
+            <div class="day-location">${day.location_heading || ''}</div>
+            <div class="day-date">${day.weekday || ''}, ${day.date || ''}</div>
+          </div>
+          <span class="day-status" id="day-status-${i}">Wird generiert…</span>
+          <span class="chevron">▲</span>
+        </div>
+        <div class="day-card-body">
+          <textarea class="day-textarea generating" id="day-ta-${i}"
+            placeholder="Text wird generiert…" readonly></textarea>
+          ${hotelHtml}
+          <div class="day-card-actions">
+            <button class="btn-regen" id="day-regen-${i}" onclick="regenDay(${i})" disabled>↺ Neu generieren</button>
+            <button class="btn-regen" onclick="dbQuickSaveOpen('sightseeing', ${i})">💾 Diesen Tagestext in Datenbank speichern</button>
+            <span class="day-hint" id="day-hint-${i}"></span>
+          </div>
+        </div>`;
+      container.appendChild(card);
+    });
+  }
+
+  function toggleCard(i) {
+    document.getElementById(`day-card-${i}`).classList.toggle('open');
+  }
+
+  // ── Set status badge ───────────────────────────────────────────────────
+  function setDayStatus(i, state, text) {
+    const badge = document.getElementById(`day-status-${i}`);
+    if (!badge) return;
+    badge.textContent = text;
+    badge.className = 'day-status' + (state === 'done' ? ' done' : state === 'error' ? ' error' : '');
+  }
+
+  // ── Generate all days sequentially (avoids TPM rate limit) ────────────
+  async function generateAllDays() {
+    const days = currentStructure.days || [];
+    let done = 0;
+    updateGenStatus(done, days.length);
+    for (let i = 0; i < days.length; i++) {
+      await generateDay(i, false);
+      done++;
+      updateGenStatus(done, days.length);
+    }
+  }
+
+  function updateGenStatus(done, total) {
+    document.getElementById('gen-status').textContent =
+      done < total ? `${done}/${total} Tage generiert` : `Alle ${total} Tage bereit`;
+  }
+
+  // ── Generate one day ───────────────────────────────────────────────────
+  async function generateDay(i, isRegen = false) {
+    const ta     = document.getElementById(`day-ta-${i}`);
+    const regen  = document.getElementById(`day-regen-${i}`);
+    const hint   = document.getElementById(`day-hint-${i}`);
+    if (!ta) return;
+
+    ta.classList.add('generating');
+    ta.readOnly = true;
+    ta.value = '';
+    if (isRegen) ta.placeholder = 'Wird neu generiert…';
+    if (regen) regen.disabled = true;
+    setDayStatus(i, 'pending', 'Wird generiert…');
+    if (hint) hint.textContent = '';
+
+    const day = currentStructure.days[i];
+    try {
+      const res = await fetch('/generate-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          day,
+          destination: currentStructure.destination || '',
+          day_text: '',
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Fehler');
+      }
+      const data = await res.json();
+      const paragraphs = (data.body_paragraphs || []).filter(p => p.trim());
+      const hotelDesc  = data.hotel_description || '';
+      const fullText = paragraphs.join('\n\n');
+
+      ta.classList.remove('generating');
+      ta.readOnly = false;
+      ta.value = fullText;
+      dayTexts[i] = fullText;
+
+      // Store back into structure for docx build
+      currentStructure.days[i].body_paragraphs = paragraphs;
+      if (day.hotel) {
+        currentStructure.days[i].hotel.description = hotelDesc;
+        const descTa = document.getElementById(`hotel-desc-${i}`);
+        if (descTa) descTa.value = hotelDesc;
+      }
+
+      setDayStatus(i, 'done', '✓ Bereit');
+      if (hint) hint.textContent = 'Text kann direkt bearbeitet werden';
+    } catch(err) {
+      ta.classList.remove('generating');
+      ta.readOnly = false;
+      ta.value = '';
+      ta.placeholder = `Fehler: ${err.message}`;
+      setDayStatus(i, 'error', '✗ Fehler');
+      if (hint) hint.textContent = err.message;
+    } finally {
+      if (regen) regen.disabled = false;
+    }
+  }
+
+  async function regenDay(i) {
+    await generateDay(i, true);
+  }
+
+  // ── Generate text for a manually added day ─────────────────────────────
+  async function regenManualDay(i) {
+    const ta     = document.getElementById(`day-ta-${i}`);
+    const rawTa  = document.getElementById(`day-raw-${i}`);
+    const hint   = document.getElementById(`day-hint-${i}`);
+    const btn    = document.getElementById(`day-regen-${i}`);
+    if (!ta) return;
+
+    const rawText = rawTa ? rawTa.value.trim() : '';
+    if (!rawText) { if (hint) hint.textContent = 'Bitte zuerst Stichpunkte eingeben.'; return; }
+
+    ta.classList.add('generating');
+    ta.readOnly = true;
+    ta.value = '';
+    ta.placeholder = 'Wird generiert…';
+    if (btn) btn.disabled = true;
+    setDayStatus(i, 'pending', 'Wird generiert…');
+    if (hint) hint.textContent = '';
+
+    const day = currentStructure.days[i];
+    // Inject raw text as activities_raw so the AI uses it
+    const dayWithRaw = { ...day, activities_raw: rawText };
+
+    try {
+      const res = await fetch('/generate-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          day: dayWithRaw,
+          destination: currentStructure.destination || '',
+          day_text: rawText,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Fehler');
+      }
+      const data = await res.json();
+      const paragraphs = (data.body_paragraphs || []).filter(p => p.trim());
+      const fullText = paragraphs.join('\n\n');
+
+      ta.classList.remove('generating');
+      ta.readOnly = false;
+      ta.value = fullText;
+      currentStructure.days[i].body_paragraphs = paragraphs;
+      setDayStatus(i, 'done', '✓ Bereit');
+      if (hint) hint.textContent = 'Text kann direkt bearbeitet werden';
+    } catch(err) {
+      ta.classList.remove('generating');
+      ta.readOnly = false;
+      ta.value = '';
+      ta.placeholder = `Fehler: ${err.message}`;
+      setDayStatus(i, 'error', '✗ Fehler');
+      if (hint) hint.textContent = err.message;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // ── Sync textarea edits back to structure before building ──────────────
+  function syncEdits() {
+    const days = currentStructure.days || [];
+    days.forEach((day, i) => {
+      const ta = document.getElementById(`day-ta-${i}`);
+      if (!ta) return;
+      const text = ta.value.trim();
+      const paras = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+      currentStructure.days[i].body_paragraphs = paras;
+      // Capture hotel link + description if inputs exist
+      const linkInput = document.getElementById(`hotel-link-${i}`);
+      if (linkInput && currentStructure.days[i].hotel) {
+        currentStructure.days[i].hotel.link = linkInput.value.trim();
+      }
+      const descTa = document.getElementById(`hotel-desc-${i}`);
+      if (descTa && currentStructure.days[i].hotel) {
+        currentStructure.days[i].hotel.description = descTa.value.trim();
+      }
+    });
+  }
+
+  // ── Consecutive day/date helpers ────────────────────────────────────────
+  const GERMAN_WEEKDAYS = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+
+  function germanWeekdayFromDate(dateStr) {
+    const m = (dateStr || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (!m) return '';
+    const dt = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+    return GERMAN_WEEKDAYS[dt.getUTCDay()];
+  }
+
+  function addOneDayDe(dateStr) {
+    const m = (dateStr || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (!m) return '';
+    const dt = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    const dd = String(dt.getUTCDate()).padStart(2, '0');
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    return `${dd}.${mm}.${dt.getUTCFullYear()}`;
+  }
+
+  // ── Add a blank day card manually ──────────────────────────────────────
+  function addDayCard() {
+    if (!currentStructure) return;
+    const days = currentStructure.days || [];
+    const i = days.length;
+    const prevDate = i > 0 ? days[i - 1].date : '';
+    const nextDate = addOneDayDe(prevDate);
+    const newDay = {
+      day_number: i + 1,
+      location_heading: '',
+      weekday: germanWeekdayFromDate(nextDate),
+      date: nextDate,
+      body_paragraphs: [],
+      bullets: [],
+      hotel: null,
+      _manual: true,
+    };
+    currentStructure.days.push(newDay);
+
+    const container = document.getElementById('day-cards');
+    const card = document.createElement('div');
+    card.className = 'day-card open';
+    card.id = `day-card-${i}`;
+    card.innerHTML = `
+      <div class="day-card-header" onclick="toggleCard(${i})">
+        <div class="day-num">${i + 1}</div>
+        <div class="day-title">
+          <input id="day-location-${i}" placeholder="Ort / Überschrift" value=""
+            style="border:none;border-bottom:1px solid #c8d8db;background:transparent;color:#fff;font-size:14px;font-weight:600;width:190px;outline:none;"
+            oninput="currentStructure.days[${i}].location_heading=this.value">
+          <div style="display:flex;gap:8px;margin-top:3px;">
+            <input id="day-daynum-${i}" placeholder="Tag-Nr." value="${i + 1}"
+              style="border:none;border-bottom:1px solid #c8d8db;background:transparent;color:rgba(255,255,255,.8);font-size:12px;width:55px;outline:none;"
+              oninput="currentStructure.days[${i}].day_number=+this.value">
+            <input id="day-date-${i}" placeholder="TT.MM.JJJJ" value="${nextDate}"
+              style="border:none;border-bottom:1px solid #c8d8db;background:transparent;color:rgba(255,255,255,.8);font-size:12px;width:110px;outline:none;"
+              oninput="currentStructure.days[${i}].date=this.value; currentStructure.days[${i}].weekday=germanWeekdayFromDate(this.value);">
+          </div>
+        </div>
+        <span class="day-status done" id="day-status-${i}">Manuell</span>
+        <span class="chevron">▲</span>
+      </div>
+      <div class="day-card-body">
+        <div style="margin-bottom:8px;">
+          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">Stichpunkte / Englischer Text (für KI):</label>
+          <textarea id="day-raw-${i}" placeholder="Aktivitäten auf Englisch oder Stichpunkte eingeben…"
+            style="width:100%;box-sizing:border-box;min-height:60px;padding:8px;border:1px solid #c8d8db;border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;"></textarea>
+        </div>
+        <textarea class="day-textarea" id="day-ta-${i}"
+          placeholder="Tagestext hier eingeben oder generieren lassen…" style="min-height:120px;"></textarea>
+        <div class="day-card-actions">
+          <button class="btn-regen" id="day-regen-${i}" onclick="regenManualDay(${i})">✦ Text generieren</button>
+          <span class="day-hint" id="day-hint-${i}">Manuell hinzugefügter Tag</span>
+        </div>
+      </div>`;
+    container.appendChild(card);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  STEP 3 — Build Word document
+  // ══════════════════════════════════════════════════════════════════════
+  async function buildDocx() {
+    syncEdits();
+    const btn = document.getElementById('build-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Wird erstellt…';
+
+    const resultDiv  = document.getElementById('docx-result');
+    const resultTitle = document.getElementById('docx-result-title');
+    const resultMsg   = document.getElementById('docx-result-msg');
+    const dlBtn       = document.getElementById('docx-download-btn');
+    resultDiv.style.display = 'none';
+
+    try {
+      const ubersichtMode = document.querySelector('input[name="ubersicht-mode"]:checked')?.value || 'both';
+      const res = await fetch('/build-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itinerary: currentStructure, ubersicht_mode: ubersichtMode }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Server-Fehler');
+      }
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      const fname = match ? match[1].replace(/['"]/g, '') : 'Reiseverlauf.docx';
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+
+      resultDiv.style.display = 'block';
+      resultTitle.textContent = '✅ Reiseverlauf erstellt!';
+      resultMsg.textContent   = fname + ' ist bereit.';
+      dlBtn.href     = url;
+      dlBtn.download = fname;
+      dlBtn.style.display = 'inline-flex';
+      resultDiv.scrollIntoView({ behavior: 'smooth' });
+    } catch(err) {
+      resultDiv.style.display = 'block';
+      resultTitle.textContent = '✗ Fehler';
+      resultMsg.textContent   = err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⬇ Word erstellen';
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  PAGE SWITCHING
+  // ══════════════════════════════════════════════════════════════
+  function showPage(page) {
+    document.querySelectorAll('.page-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    document.getElementById('ptab-' + page).classList.add('active');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  CONFIRMATION TAB
+  // ══════════════════════════════════════════════════════════════
+
+  let dmcData = {};
+  let confActiveTab = 'file';
+  let confDownloadUrl = null;
+
+  // Load DMC list on startup
+  async function loadDmcData() {
+    try {
+      const r = await fetch('/api/dmcs');
+      dmcData = await r.json();
+      const destSel = document.getElementById('dmc-destination');
+      Object.keys(dmcData).forEach(dest => {
+        const opt = document.createElement('option');
+        opt.value = dest; opt.textContent = dest;
+        destSel.appendChild(opt);
+      });
+      document.getElementById('dmc-json-editor').value = JSON.stringify(dmcData, null, 2);
+    } catch(e) { console.warn('DMC load failed', e); }
+  }
+  loadDmcData();
+
+  function loadDmcOptions() {
+    const dest = document.getElementById('dmc-destination').value;
+    const sel  = document.getElementById('dmc-select');
+    sel.innerHTML = '<option value="">-- DMC wählen --</option>';
+    if (dest && dmcData[dest]) {
+      dmcData[dest].forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id; opt.textContent = d.name;
+        sel.appendChild(opt);
+      });
+      if (dmcData[dest].length === 1) sel.value = dmcData[dest][0].id;
+    }
+  }
+
+  function toggleDmcEditor() {
+    const ed = document.getElementById('dmc-editor');
+    ed.style.display = ed.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function saveDmcList() {
+    try {
+      const val = JSON.parse(document.getElementById('dmc-json-editor').value);
+      await fetch('/api/dmcs', { method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(val) });
+      dmcData = val;
+      // Refresh destination dropdown
+      const destSel = document.getElementById('dmc-destination');
+      const current = destSel.value;
+      destSel.innerHTML = '<option value="">-- Destination wählen --</option>';
+      Object.keys(dmcData).forEach(dest => {
+        const opt = document.createElement('option');
+        opt.value = dest; opt.textContent = dest;
+        destSel.appendChild(opt);
+      });
+      destSel.value = current;
+      loadDmcOptions();
+      toggleDmcEditor();
+      alert('DMC-Liste gespeichert!');
+    } catch(e) { alert('Fehler: ungültiges JSON — ' + e.message); }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  DATENBANK TAB — add/edit/delete reference paragraphs
+  // ══════════════════════════════════════════════════════════════
+  let dbType = 'hotel';
+  let dbEditingIdx = null;   // null = adding new, otherwise idx of entry being edited
+  let dbSearchTimer = null;
+
+  function dbSetType(type) {
+    dbType = type;
+    document.getElementById('db-type-hotel').classList.toggle('active', type === 'hotel');
+    document.getElementById('db-type-sightseeing').classList.toggle('active', type === 'sightseeing');
+    document.getElementById('db-heading-label').textContent = type === 'hotel' ? 'Hotelname' : 'Ort / Überschrift';
+    document.getElementById('db-heading-hint').textContent = type === 'hotel'
+      ? 'Wie das Hotel in der DMC-Vorlage benannt ist'
+      : 'z.B. der Ortsname oder Zeitraum, wie er im Reiseverlauf erscheint';
+    document.getElementById('db-heading').placeholder = type === 'hotel' ? 'z.B. Aman Tokyo' : 'z.B. Kyoto';
+  }
+
+  async function dbLoadDestinations() {
+    try {
+      const r = await fetch('/api/reference/destinations');
+      const data = await r.json();
+      const filterSel = document.getElementById('db-filter-destination');
+      const dataList  = document.getElementById('db-destination-list');
+      filterSel.innerHTML = '<option value="">Alle Länder</option>';
+      dataList.innerHTML = '';
+      (data.destinations || []).forEach(dest => {
+        const opt1 = document.createElement('option'); opt1.value = dest; opt1.textContent = dest;
+        filterSel.appendChild(opt1);
+        const opt2 = document.createElement('option'); opt2.value = dest;
+        dataList.appendChild(opt2);
+      });
+    } catch(e) { console.warn('Destination load failed', e); }
+  }
+
+  function dbSearchDebounced() {
+    clearTimeout(dbSearchTimer);
+    dbSearchTimer = setTimeout(dbSearch, 250);
+  }
+
+  function dbEscapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  async function dbSearch() {
+    const destination = document.getElementById('db-filter-destination').value;
+    const type        = document.getElementById('db-filter-type').value;
+    const query       = document.getElementById('db-filter-query').value.trim();
+    const params = new URLSearchParams({ destination, type, query });
+    const resultsEl = document.getElementById('db-results');
+    const countEl   = document.getElementById('db-results-count');
+    resultsEl.innerHTML = '<div style="font-size:12px;color:var(--grey-500);">Lädt…</div>';
+    try {
+      const r = await fetch('/api/reference/entries?' + params.toString());
+      const data = await r.json();
+      const entries = data.entries || [];
+      countEl.textContent = entries.length >= 200
+        ? '200+ Treffer — bitte weiter eingrenzen'
+        : `${entries.length} Treffer`;
+      if (!entries.length) {
+        resultsEl.innerHTML = '<div style="font-size:12px;color:var(--grey-500);font-style:italic;">Keine Einträge gefunden.</div>';
+        return;
+      }
+      resultsEl.innerHTML = entries.map(e => {
+        const heading = e.type === 'hotel' ? (e.hotel_name || '') : (e.location_heading || '');
+        return `
+        <div class="db-entry-card">
+          <div class="db-entry-top">
+            <span class="db-entry-type ${e.type === 'hotel' ? 'hotel' : ''}">${e.type === 'hotel' ? 'Hotel' : 'Sight'}</span>
+            <span class="db-entry-heading">${dbEscapeHtml(heading)}</span>
+            <span class="db-entry-dest">${dbEscapeHtml(e.destination)}</span>
+          </div>
+          <div class="db-entry-text">${dbEscapeHtml(e.text)}</div>
+          <div class="db-entry-actions">
+            <button class="db-entry-edit" onclick='dbStartEdit(${e.idx})'>✎ Bearbeiten</button>
+            <button class="db-entry-delete" onclick="dbDeleteEntry(${e.idx})">🗑 Löschen</button>
+          </div>
+        </div>`;
+      }).join('');
+      window._dbEntries = entries;   // cache for edit lookups
+    } catch(e) {
+      resultsEl.innerHTML = '<div style="font-size:12px;color:#c00;">Fehler beim Laden.</div>';
+    }
+  }
+
+  function dbStartEdit(idx) {
+    const entry = (window._dbEntries || []).find(e => e.idx === idx);
+    if (!entry) return;
+    dbSwitchMode('manual');
+    dbEditingIdx = idx;
+    dbSetType(entry.type);
+    document.getElementById('db-destination').value = entry.destination || '';
+    document.getElementById('db-heading').value = entry.type === 'hotel' ? (entry.hotel_name || '') : (entry.location_heading || '');
+    document.getElementById('db-text').value = entry.text || '';
+    document.getElementById('db-form-title-lbl').textContent = 'Eintrag bearbeiten';
+    document.getElementById('db-save-text').textContent = 'Änderung speichern';
+    document.getElementById('db-cancel-edit-btn').style.display = 'block';
+    document.getElementById('db-panel-manual').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function dbCancelEdit() {
+    dbEditingIdx = null;
+    document.getElementById('db-destination').value = '';
+    document.getElementById('db-heading').value = '';
+    document.getElementById('db-text').value = '';
+    document.getElementById('db-form-title-lbl').textContent = 'Neuen Eintrag hinzufügen';
+    document.getElementById('db-save-text').textContent = 'Eintrag speichern';
+    document.getElementById('db-cancel-edit-btn').style.display = 'none';
+  }
+
+  function dbShowResult(ok, msg) {
+    const box = document.getElementById('db-result-box');
+    box.className = 'result-box ' + (ok ? 'success' : 'error');
+    box.style.display = 'block';
+    document.getElementById('db-result-title').textContent = ok ? '✓ Gespeichert' : '✗ Fehler';
+    document.getElementById('db-result-msg').textContent = msg;
+    setTimeout(() => { box.style.display = 'none'; }, 4000);
+  }
+
+  async function dbSaveEntry() {
+    const payload = {
+      type: dbType,
+      destination: document.getElementById('db-destination').value.trim(),
+      heading: document.getElementById('db-heading').value.trim(),
+      text: document.getElementById('db-text').value.trim(),
+    };
+    if (!payload.destination || !payload.heading || !payload.text) {
+      dbShowResult(false, 'Bitte Land, Bezeichnung und Beschreibung ausfüllen.');
+      return;
+    }
+    const btn = document.getElementById('db-save-btn');
+    btn.disabled = true;
+    try {
+      const url = dbEditingIdx === null ? '/api/reference/entries' : `/api/reference/entries/${dbEditingIdx}`;
+      const method = dbEditingIdx === null ? 'POST' : 'PUT';
+      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || 'Server-Fehler');
+      }
+      dbShowResult(true, dbEditingIdx === null ? 'Neuer Eintrag gespeichert.' : 'Eintrag aktualisiert.');
+      dbCancelEdit();
+      dbLoadDestinations();
+      dbSearch();
+    } catch(e) {
+      dbShowResult(false, e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function dbDeleteEntry(idx) {
+    if (!confirm('Diesen Eintrag wirklich löschen?')) return;
+    try {
+      const r = await fetch(`/api/reference/entries/${idx}`, { method: 'DELETE' });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || 'Server-Fehler');
+      }
+      dbSearch();
+    } catch(e) {
+      alert('Fehler beim Löschen: ' + e.message);
+    }
+  }
+
+  // ── Collapsible Referenzdatenbank section (inside the RV editor) ──────
+  let dbSectionInitialized = false;
+  function dbToggleSection() {
+    const body = document.getElementById('db-section-body');
+    const chevron = document.getElementById('db-section-chevron');
+    const open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    chevron.style.transform = open ? '' : 'rotate(90deg)';
+    if (!open && !dbSectionInitialized) {
+      dbSectionInitialized = true;
+      dbLoadDestinations();
+      dbSearch();
+    }
+  }
+
+  // ── Manual-add vs. upload-and-parse sub-mode ───────────────────────────
+  function dbSwitchMode(mode) {
+    document.getElementById('db-panel-manual').style.display = mode === 'manual' ? 'block' : 'none';
+    document.getElementById('db-panel-upload').style.display = mode === 'upload' ? 'block' : 'none';
+    document.getElementById('db-mode-manual').classList.toggle('active', mode === 'manual');
+    document.getElementById('db-mode-upload').classList.toggle('active', mode === 'upload');
+  }
+
+  // ── Upload & parse a past itinerary document ───────────────────────────
+  let dbUpActiveTab = 'file';
+  function dbUpSwitchTab(tab) {
+    dbUpActiveTab = tab;
+    document.getElementById('db-up-panel-file').style.display  = tab === 'file'  ? 'block' : 'none';
+    document.getElementById('db-up-panel-paste').style.display = tab === 'paste' ? 'block' : 'none';
+    document.getElementById('db-up-tab-file').classList.toggle('active',  tab === 'file');
+    document.getElementById('db-up-tab-paste').classList.toggle('active', tab === 'paste');
+  }
+
+  const dbUpFileInput = document.getElementById('db-up-file-input');
+  const dbUpDropZone  = document.getElementById('db-up-drop-zone');
+  dbUpFileInput.addEventListener('change', () => {
+    if (dbUpFileInput.files[0]) {
+      document.getElementById('db-up-file-name-text').textContent = dbUpFileInput.files[0].name;
+      document.getElementById('db-up-file-name').style.display = 'block';
+    }
+  });
+  dbUpDropZone.addEventListener('dragover', e => { e.preventDefault(); dbUpDropZone.classList.add('drag-over'); });
+  dbUpDropZone.addEventListener('dragleave', () => dbUpDropZone.classList.remove('drag-over'));
+  dbUpDropZone.addEventListener('drop', e => {
+    e.preventDefault(); dbUpDropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) {
+      dbUpFileInput.files = e.dataTransfer.files;
+      document.getElementById('db-up-file-name-text').textContent = e.dataTransfer.files[0].name;
+      document.getElementById('db-up-file-name').style.display = 'block';
+    }
+  });
+
+  function dbUpShowResult(ok, msg) {
+    const box = document.getElementById('db-up-result-box');
+    box.className = 'result-box ' + (ok ? 'success' : 'error');
+    box.style.display = 'block';
+    document.getElementById('db-up-result-title').textContent = ok ? '✓ Eingelesen' : '✗ Fehler';
+    document.getElementById('db-up-result-msg').textContent = msg;
+  }
+
+  let dbCandidates = [];
+  async function dbParseDocument() {
+    const destination = document.getElementById('db-up-destination').value.trim();
+    if (!destination) { dbUpShowResult(false, 'Bitte zuerst ein Land / Destination angeben.'); return; }
+    const pasteText = document.getElementById('db-up-paste-input').value.trim();
+    if (dbUpActiveTab === 'file' && !dbUpFileInput.files[0]) { dbUpShowResult(false, 'Bitte eine Datei auswählen oder Text einfügen.'); return; }
+    if (dbUpActiveTab === 'paste' && !pasteText) { dbUpShowResult(false, 'Bitte Text einfügen.'); return; }
+
+    const btn = document.getElementById('db-up-parse-btn');
+    btn.disabled = true;
+    document.getElementById('db-up-parse-text').textContent = 'Liest ein…';
+    document.getElementById('db-up-result-box').style.display = 'none';
+    document.getElementById('db-up-candidates').style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('destination', destination);
+    if (dbUpActiveTab === 'file' && dbUpFileInput.files[0]) fd.append('file', dbUpFileInput.files[0]);
+    if (dbUpActiveTab === 'paste') fd.append('pasted_text', pasteText);
+
+    try {
+      const r = await fetch('/api/reference/parse-document', { method: 'POST', body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || 'Server-Fehler');
+      }
+      const data = await r.json();
+      dbCandidates = (data.candidates || []).map((c, idx) => ({ ...c, _selected: true, _key: idx }));
+      if (!dbCandidates.length) {
+        dbUpShowResult(false, 'Keine verwertbaren Absätze gefunden — Dokument prüft evtl. andere Formatierung.');
+        return;
+      }
+      dbUpShowResult(true, `${dbCandidates.length} Absätze gefunden. Bitte prüfen und auswählen.`);
+      dbRenderCandidates();
+    } catch(e) {
+      dbUpShowResult(false, e.message);
+    } finally {
+      btn.disabled = false;
+      document.getElementById('db-up-parse-text').textContent = 'Einlesen';
+    }
+  }
+
+  function dbRenderCandidates() {
+    const listEl = document.getElementById('db-up-candidates-list');
+    document.getElementById('db-up-candidates').style.display = 'block';
+    document.getElementById('db-up-candidates-count').textContent =
+      `${dbCandidates.filter(c => c._selected).length} von ${dbCandidates.length} ausgewählt`;
+    listEl.innerHTML = dbCandidates.map(c => {
+      const heading = c.type === 'hotel' ? (c.hotel_name || '') : (c.location_heading || '');
+      return `
+      <div class="db-entry-card">
+        <div class="db-entry-top" style="align-items:flex-start;">
+          <input type="checkbox" ${c._selected ? 'checked' : ''} onchange="dbToggleCandidate(${c._key}, this.checked)" style="margin-top:3px;">
+          <span class="db-entry-type ${c.type === 'hotel' ? 'hotel' : ''}">${c.type === 'hotel' ? 'Hotel' : 'Sight'}</span>
+          <input type="text" value="${dbEscapeHtml(heading)}" onchange="dbEditCandidateHeading(${c._key}, this.value)"
+            style="flex:1;min-width:100px;font-size:13px;font-weight:700;color:var(--teal);border:1px solid var(--grey-200);border-radius:4px;padding:3px 6px;">
+        </div>
+        <textarea onchange="dbEditCandidateText(${c._key}, this.value)"
+          style="width:100%;margin-top:6px;padding:6px 8px;border:1px solid var(--grey-200);border-radius:4px;font-size:12px;font-family:inherit;color:#444;resize:vertical;min-height:60px;">${dbEscapeHtml(c.text)}</textarea>
+      </div>`;
+    }).join('');
+    document.getElementById('db-up-save-text').textContent = `Ausgewählte speichern (${dbCandidates.filter(c => c._selected).length})`;
+  }
+
+  function dbToggleCandidate(key, checked) {
+    const c = dbCandidates.find(c => c._key === key);
+    if (c) c._selected = checked;
+    document.getElementById('db-up-candidates-count').textContent =
+      `${dbCandidates.filter(c => c._selected).length} von ${dbCandidates.length} ausgewählt`;
+    document.getElementById('db-up-save-text').textContent = `Ausgewählte speichern (${dbCandidates.filter(c => c._selected).length})`;
+  }
+  function dbEditCandidateHeading(key, value) {
+    const c = dbCandidates.find(c => c._key === key);
+    if (!c) return;
+    if (c.type === 'hotel') c.hotel_name = value; else c.location_heading = value;
+  }
+  function dbEditCandidateText(key, value) { const c = dbCandidates.find(c => c._key === key); if (c) c.text = value; }
+
+  async function dbSaveCandidates() {
+    const selected = dbCandidates.filter(c => c._selected);
+    if (!selected.length) { dbUpShowResult(false, 'Keine Absätze ausgewählt.'); return; }
+    const btn = document.getElementById('db-up-save-btn');
+    btn.disabled = true;
+    try {
+      const entries = selected.map(c => ({
+        type: c.type,
+        destination: c.destination,
+        heading: c.type === 'hotel' ? (c.hotel_name || '') : (c.location_heading || ''),
+        text: c.text,
+        source_file: c.source_file,
+        language: c.language,
+      })).filter(e => e.heading && e.text);
+      const r = await fetch('/api/reference/entries/bulk', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries }),
+      });
+      const data = await r.json();
+      dbUpShowResult(true, `${data.added} Einträge gespeichert.`);
+      document.getElementById('db-up-candidates').style.display = 'none';
+      dbCandidates = [];
+      document.getElementById('db-up-file-input').value = '';
+      document.getElementById('db-up-paste-input').value = '';
+      dbLoadDestinations();
+      dbSearch();
+    } catch(e) {
+      dbUpShowResult(false, e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ── Quick-save modal, opened from a day card while editing ─────────────
+  let dbQuickType = 'sightseeing';
+  let dbQuickDayIndex = null;
+  function dbQuickSaveOpen(type, i) {
+    dbQuickType = type;
+    dbQuickDayIndex = i;
+    const day = currentStructure.days[i];
+    const destination = currentStructure.destination || '';
+    let heading, text;
+    if (type === 'hotel') {
+      heading = (day.hotel && day.hotel.name) || '';
+      const descTa = document.getElementById(`hotel-desc-${i}`);
+      text = descTa ? descTa.value.trim() : '';
+      document.getElementById('db-quick-heading-label').textContent = 'Hotelname';
+      document.getElementById('db-quick-title').textContent = 'Hotelbeschreibung in Datenbank speichern';
+    } else {
+      heading = day.location_heading || '';
+      const ta = document.getElementById(`day-ta-${i}`);
+      text = ta ? ta.value.trim() : '';
+      document.getElementById('db-quick-heading-label').textContent = 'Ort / Überschrift';
+      document.getElementById('db-quick-title').textContent = 'Tagestext als Sehenswürdigkeit speichern';
+    }
+    if (!text) { alert('Für diesen Tag ist noch kein Text vorhanden.'); return; }
+    document.getElementById('db-quick-destination').value = destination;
+    document.getElementById('db-quick-heading').value = heading;
+    document.getElementById('db-quick-text').value = text;
+    document.getElementById('db-quick-result-box').style.display = 'none';
+    document.getElementById('db-quick-modal').style.display = 'flex';
+  }
+
+  function dbQuickSaveClose() {
+    document.getElementById('db-quick-modal').style.display = 'none';
+  }
+
+  async function dbQuickSaveConfirm() {
+    const payload = {
+      type: dbQuickType,
+      destination: document.getElementById('db-quick-destination').value.trim(),
+      heading: document.getElementById('db-quick-heading').value.trim(),
+      text: document.getElementById('db-quick-text').value.trim(),
+    };
+    const box = document.getElementById('db-quick-result-box');
+    if (!payload.destination || !payload.heading || !payload.text) {
+      box.className = 'result-box error'; box.style.display = 'block';
+      document.getElementById('db-quick-result-title').textContent = '✗ Fehler';
+      document.getElementById('db-quick-result-msg').textContent = 'Bitte alle Felder ausfüllen.';
+      return;
+    }
+    try {
+      const r = await fetch('/api/reference/entries', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || 'Server-Fehler');
+      }
+      box.className = 'result-box success'; box.style.display = 'block';
+      document.getElementById('db-quick-result-title').textContent = '✓ Gespeichert';
+      document.getElementById('db-quick-result-msg').textContent = 'Wird künftig für dieses Hotel bzw. diesen Ort verwendet.';
+      dbLoadDestinations();
+      dbSearch();
+      setTimeout(dbQuickSaveClose, 1400);
+    } catch(e) {
+      box.className = 'result-box error'; box.style.display = 'block';
+      document.getElementById('db-quick-result-title').textContent = '✗ Fehler';
+      document.getElementById('db-quick-result-msg').textContent = e.message;
+    }
+  }
+
+  function confSwitchTab(tab) {
+    confActiveTab = tab;
+    document.getElementById('cpanel-file').style.display  = tab === 'file'  ? 'block' : 'none';
+    document.getElementById('cpanel-paste').style.display = tab === 'paste' ? 'block' : 'none';
+    document.getElementById('ctab-file').classList.toggle('active',  tab === 'file');
+    document.getElementById('ctab-paste').classList.toggle('active', tab === 'paste');
+    if (tab === 'paste') document.getElementById('conf-file-input').value = '';
+    else document.getElementById('conf-paste-input').value = '';
+  }
+
+  // Conf file drop zone
+  const confFileInput = document.getElementById('conf-file-input');
+  const confDropZone  = document.getElementById('conf-drop-zone');
+  const confFileNameEl  = document.getElementById('conf-file-name');
+  const confFileNameTxt = document.getElementById('conf-file-name-text');
+
+  confFileInput.addEventListener('change', () => {
+    if (confFileInput.files[0]) {
+      confFileNameTxt.textContent = confFileInput.files[0].name;
+      confFileNameEl.style.display = 'block';
+      confDropZone.querySelector('.label').textContent = 'Datei ausgewählt';
+    }
+  });
+
+  // Confirmation form submit
+  document.getElementById('conf-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const pasteText = document.getElementById('conf-paste-input').value.trim();
+    if (confActiveTab === 'file' && !confFileInput.files[0]) {
+      alert('Bitte eine Rechnung hochladen.'); return;
+    }
+    if (confActiveTab === 'paste' && !pasteText) {
+      alert('Bitte Rechnungstext einfügen.'); return;
+    }
+    const dmc_id = document.getElementById('dmc-select').value;
+    const destination = document.getElementById('dmc-destination').value;
+
+    const submitBtn = document.getElementById('conf-submit-btn');
+    const progWrap  = document.getElementById('conf-progress-wrap');
+    const progBar   = document.getElementById('conf-progress-bar');
+    const resultBox = document.getElementById('conf-result-box');
+
+    submitBtn.disabled = true;
+    document.getElementById('conf-btn-text').textContent = 'Wird generiert…';
+    document.getElementById('conf-btn-icon').textContent = '⏳';
+    progWrap.style.display = 'block';
+    resultBox.style.display = 'none';
+
+    // Animate progress
+    let pct = 10;
+    const progTimer = setInterval(() => {
+      pct = Math.min(pct + 15, 90);
+      progBar.style.width = pct + '%';
+    }, 3000);
+
+    try {
+      const fd = new FormData();
+      if (confActiveTab === 'file') fd.append('file', confFileInput.files[0]);
+      else fd.append('pasted_text', pasteText);
+      fd.append('dmc_id', dmc_id);
+      fd.append('destination', destination);
+      fd.append('guide_name',  document.getElementById('guide-name').value);
+      fd.append('guide_phone', document.getElementById('guide-phone').value);
+
+      const res = await fetch('/generate-confirmation', { method: 'POST', body: fd });
+      clearInterval(progTimer);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({detail: res.statusText}));
+        throw new Error(err.detail || 'Fehler');
+      }
+
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      const dlName = match ? match[1].replace(/['"]/g,'') : 'Confirmation.docx';
+      const blob = await res.blob();
+      confDownloadUrl = URL.createObjectURL(blob);
+
+      progBar.style.width = '100%';
+      setTimeout(() => { progWrap.style.display = 'none'; }, 400);
+
+      const dlBtn    = document.getElementById('conf-download-btn');
+      const resetBtn = document.getElementById('conf-reset-btn');
+      document.getElementById('conf-result-box').className = 'result-box success';
+      document.getElementById('conf-result-title').textContent = '✅ Confirmation erstellt!';
+      document.getElementById('conf-result-msg').textContent = dlName;
+      dlBtn.href = confDownloadUrl; dlBtn.download = dlName;
+      dlBtn.style.display = 'inline-flex'; resetBtn.style.display = 'inline-flex';
+      resultBox.style.display = 'block';
+
+    } catch(err) {
+      clearInterval(progTimer);
+      progBar.style.width = '0%';
+      progWrap.style.display = 'none';
+      document.getElementById('conf-result-box').className = 'result-box error';
+      document.getElementById('conf-result-title').textContent = '❌ Fehler';
+      document.getElementById('conf-result-msg').textContent = err.message;
+      document.getElementById('conf-reset-btn').style.display = 'inline-flex';
+      resultBox.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+      document.getElementById('conf-btn-text').textContent = 'Confirmation generieren';
+      document.getElementById('conf-btn-icon').textContent = '📋';
+    }
+  });
+
+  document.getElementById('conf-reset-btn').addEventListener('click', () => {
+    document.getElementById('conf-form').reset();
+    confFileNameEl.style.display = 'none';
+    confDropZone.querySelector('.label').textContent = 'Rechnung hier ablegen';
+    document.getElementById('conf-paste-input').value = '';
+    document.getElementById('conf-result-box').style.display = 'none';
+    if (confDownloadUrl) { URL.revokeObjectURL(confDownloadUrl); confDownloadUrl = null; }
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  KALENDER TAB
+  // ══════════════════════════════════════════════════════════════
+
+  let calActiveTab = 'file';
+
+  function calSwitchTab(tab) {
+    calActiveTab = tab;
+    document.getElementById('calpanel-file').style.display  = tab === 'file'  ? 'block' : 'none';
+    document.getElementById('calpanel-paste').style.display = tab === 'paste' ? 'block' : 'none';
+    document.getElementById('caltab-file').classList.toggle('active',  tab === 'file');
+    document.getElementById('caltab-paste').classList.toggle('active', tab === 'paste');
+    if (tab === 'paste') document.getElementById('cal-file-input').value = '';
+    else document.getElementById('cal-paste-input').value = '';
+  }
+
+  const calFileInput   = document.getElementById('cal-file-input');
+  const calDropZone    = document.getElementById('cal-drop-zone');
+  const calFileNameEl  = document.getElementById('cal-file-name');
+  const calFileNameTxt = document.getElementById('cal-file-name-text');
+
+  calFileInput.addEventListener('change', () => {
+    if (calFileInput.files[0]) {
+      calFileNameTxt.textContent = calFileInput.files[0].name;
+      calFileNameEl.style.display = 'block';
+      calDropZone.querySelector('.label').textContent = 'Datei ausgewählt';
+    }
+  });
+
+  // "DD.MM.YYYY" -> "YYYYMMDD" (Google Calendar all-day date format)
+  function calDateToGoogle(d) {
+    const m = (d || '').match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    return m ? `${m[3]}${m[2]}${m[1]}` : '';
+  }
+
+  // Add N days to a "YYYYMMDD" string (Google's all-day end date is exclusive)
+  function calAddDays(yyyymmdd, days) {
+    if (!yyyymmdd || yyyymmdd.length !== 8) return yyyymmdd;
+    const y = +yyyymmdd.slice(0, 4), m = +yyyymmdd.slice(4, 6) - 1, d = +yyyymmdd.slice(6, 8);
+    const dt = new Date(Date.UTC(y, m, d));
+    dt.setUTCDate(dt.getUTCDate() + days);
+    return `${dt.getUTCFullYear()}${String(dt.getUTCMonth() + 1).padStart(2, '0')}${String(dt.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  // English meal-plan code -> German label, for the calendar description
+  function calMealPlanDe(en) {
+    const map = {
+      breakfast: 'Frühstück', halfboard: 'Halbpension',
+      fullboard: 'Vollpension', 'room only': 'ohne Verpflegung',
+    };
+    return map[(en || '').toLowerCase()] || en || '';
+  }
+
+  // Surname of the primary client — same convention as the Confirmation filename
+  function calTripSurname(data) {
+    const first = (data.client_names || [])[0] || 'Kunde';
+    const parts = first.trim().split(/\s+/);
+    return parts[parts.length - 1];
+  }
+
+  // One combined event for the whole trip: "{Surname} - {Country}", spanning
+  // travel_start–travel_end, with every hotel (and flight) listed in the description.
+  function buildTripCalendarUrl(data) {
+    const surname = calTripSurname(data);
+    const dest    = data.destination_de || data.destination_en || '';
+    const title   = `${surname} - ${dest}`.trim();
+
+    const startDate = calDateToGoogle(data.travel_start);
+    const endDate    = calAddDays(calDateToGoogle(data.travel_end) || startDate, 1); // exclusive end
+
+    const blocks = [];
+
+    (data.flights || []).forEach(f => {
+      const route     = [f.departure_airport, f.arrival_airport].filter(Boolean).join(' → ');
+      const times     = [f.departure_time, f.arrival_time].filter(Boolean).join(' - ');
+      const label     = [f.airline, f.flight_number].filter(Boolean).join(' ');
+      const dateLabel = (f.arrival_date && f.arrival_date !== f.date) ? `${f.date} - ${f.arrival_date}` : (f.date || '');
+      const detail    = [route, times, label].filter(Boolean).join(' / ');
+      blocks.push([dateLabel, detail].filter(Boolean).join('\n'));
+    });
+
+    (data.hotels || []).forEach(h => {
+      const dateLine = `${h.check_in || ''} - ${h.check_out || ''}`;
+      const detail   = [`${h.hotel_name || ''}${h.city ? ' (' + h.city + ')' : ''}`, h.room_type, calMealPlanDe(h.meal_plan_en)]
+        .filter(Boolean).join(' / ');
+      blocks.push([dateLine, detail].filter(Boolean).join('\n'));
+    });
+
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: title,
+      dates: `${startDate}/${endDate}`,
+      details: blocks.join('\n\n'),
+      location: dest,
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  }
+
+  function renderCalEvents(data) {
+    const container = document.getElementById('cal-events');
+    container.innerHTML = '';
+    const hotels  = data.hotels  || [];
+    const flights = data.flights || [];
+
+    if (!hotels.length && !flights.length) {
+      container.innerHTML = '<p style="color:var(--grey-500);font-size:13px;margin-top:16px;">Keine Hotels oder Flüge im Dokument gefunden.</p>';
+      return;
+    }
+
+    const surname = calTripSurname(data);
+    const dest    = data.destination_de || data.destination_en || '';
+
+    // ── One combined trip event — the actual "Add to Calendar" action ──────
+    const tripCard = document.createElement('div');
+    tripCard.className = 'cal-hotel-card cal-trip-card';
+    tripCard.innerHTML = `
+      <div class="cal-hotel-name">${surname} - ${dest}</div>
+      <div class="cal-hotel-dates">${data.travel_start || ''} – ${data.travel_end || ''}</div>
+      <a class="btn-download cal-add-btn" target="_blank" rel="noopener"
+         href="${buildTripCalendarUrl(data)}">📅 Zum Google Kalender hinzufügen</a>
+      <div class="cal-trip-hint">Im Google-Fenster den Kalender <strong>„Kunden"</strong> auswählen, damit der Termin automatisch grün eingefärbt wird.</div>
+    `;
+    container.appendChild(tripCard);
+
+    // ── Extracted details, for review only (no separate calendar buttons) ──
+    const detailHeading = document.createElement('div');
+    detailHeading.className = 'cal-detail-heading';
+    detailHeading.textContent = 'Erkannte Details';
+    container.appendChild(detailHeading);
+
+    flights.forEach(flight => {
+      const route     = [flight.departure_airport, flight.arrival_airport].filter(Boolean).join(' → ');
+      const label     = [flight.airline, flight.flight_number].filter(Boolean).join(' ');
+      const times     = [flight.departure_time ? 'ab ' + flight.departure_time : '',
+                          flight.arrival_time ? 'an ' + flight.arrival_time : ''].filter(Boolean).join(' · ');
+      const dateLabel = (flight.arrival_date && flight.arrival_date !== flight.date)
+        ? `${flight.date || ''} – ${flight.arrival_date}`
+        : (flight.date || '');
+      const card = document.createElement('div');
+      card.className = 'cal-hotel-card cal-flight-card cal-detail-card';
+      card.innerHTML = `
+        <div class="cal-hotel-name">✈ ${label || 'Flug'}${route ? ' · ' + route : ''}</div>
+        <div class="cal-hotel-dates">${dateLabel}${times ? ' (' + times + ')' : ''}</div>
+        ${flight.notes ? `<div class="cal-hotel-notes">${flight.notes}</div>` : ''}
+      `;
+      container.appendChild(card);
+    });
+
+    hotels.forEach(hotel => {
+      const nights   = hotel.nights || 1;
+      const nightTxt = nights === 1 ? 'Nacht' : 'Nächte';
+      const card = document.createElement('div');
+      card.className = 'cal-hotel-card cal-detail-card';
+      card.innerHTML = `
+        <div class="cal-hotel-name">${hotel.hotel_name || 'Hotel'}${hotel.city ? ' · ' + hotel.city : ''}</div>
+        <div class="cal-hotel-dates">${hotel.check_in || ''} – ${hotel.check_out || ''} (${nights} ${nightTxt})</div>
+        <div class="cal-hotel-meta">${[hotel.room_type, calMealPlanDe(hotel.meal_plan_en)].filter(Boolean).join(' · ')}</div>
+        ${hotel.notes ? `<div class="cal-hotel-notes">${hotel.notes}</div>` : ''}
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  document.getElementById('cal-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const pasteText = document.getElementById('cal-paste-input').value.trim();
+    if (calActiveTab === 'file' && !calFileInput.files[0]) {
+      alert('Bitte ein Dokument hochladen.'); return;
+    }
+    if (calActiveTab === 'paste' && !pasteText) {
+      alert('Bitte Text einfügen.'); return;
+    }
+
+    const submitBtn = document.getElementById('cal-submit-btn');
+    const progWrap  = document.getElementById('cal-progress-wrap');
+    const progBar   = document.getElementById('cal-progress-bar');
+    const resultBox = document.getElementById('cal-result-box');
+
+    submitBtn.disabled = true;
+    document.getElementById('cal-btn-text').textContent = 'Wird analysiert…';
+    document.getElementById('cal-btn-icon').textContent = '⏳';
+    progWrap.style.display = 'block';
+    resultBox.style.display = 'none';
+    document.getElementById('cal-events').innerHTML = '';
+
+    let pct = 10;
+    const progTimer = setInterval(() => {
+      pct = Math.min(pct + 15, 90);
+      progBar.style.width = pct + '%';
+    }, 2000);
+
+    try {
+      const fd = new FormData();
+      if (calActiveTab === 'file') fd.append('file', calFileInput.files[0]);
+      else fd.append('pasted_text', pasteText);
+
+      const res = await fetch('/parse-calendar-info', { method: 'POST', body: fd });
+      clearInterval(progTimer);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({detail: res.statusText}));
+        throw new Error(err.detail || 'Fehler');
+      }
+      const data = await res.json();
+      progBar.style.width = '100%';
+      setTimeout(() => { progWrap.style.display = 'none'; }, 400);
+
+      const clientNames = (data.client_names || []).join(' & ');
+      const hotelCount  = (data.hotels || []).length;
+      const flightCount = (data.flights || []).length;
+      document.getElementById('cal-result-box').className = 'result-box success';
+      document.getElementById('cal-result-title').textContent = '✅ Dokument analysiert';
+      document.getElementById('cal-result-msg').textContent =
+        `${clientNames || 'Kunde'} · ${hotelCount} Hotel(s), ${flightCount} Flug/Flüge gefunden`;
+      resultBox.style.display = 'block';
+
+      renderCalEvents(data);
+
+    } catch(err) {
+      clearInterval(progTimer);
+      progBar.style.width = '0%';
+      progWrap.style.display = 'none';
+      document.getElementById('cal-result-box').className = 'result-box error';
+      document.getElementById('cal-result-title').textContent = '❌ Fehler';
+      document.getElementById('cal-result-msg').textContent = err.message;
+      resultBox.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+      document.getElementById('cal-btn-text').textContent = 'Dokument analysieren';
+      document.getElementById('cal-btn-icon').textContent = '🔍';
+    }
+  });
+</script>
+</body>
+</html>

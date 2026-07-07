@@ -1,0 +1,293 @@
+{
+  "Baltikum": [
+    {
+      "id": "delta_tours_baltikum",
+      "name": "Delta Tours",
+      "contact_person": "Frau Lilijana Stepanoviene",
+      "mobile": "+370-686-36639",
+      "note": "emergency contact number"
+    },
+    {
+      "id": "delta_tours_reiseleiter",
+      "name": "Delta Tours – Reiseleitung",
+      "contact_person": "Frau Dr. Daiva Labanauskaitė",
+      "mobile": "+370 686 42862",
+      "note": ""
+    }
+  ],
+  "Bhutan": [
+    {
+      "id": "como_bhutan_chencho",
+      "name": "COMO Bhutan",
+      "contact_person": "Mr. Chencho Dorji",
+      "mobile": "+975 (2) 331 333",
+      "note": ""
+    },
+    {
+      "id": "como_bhutan_tshering",
+      "name": "COMO Bhutan",
+      "contact_person": "Mrs. Tshering Dema",
+      "mobile": "+975 8 271513",
+      "note": ""
+    }
+  ],
+  "China": [
+    {
+      "id": "china_a_la_carta",
+      "name": "China a la Carta Pte. Ltd.",
+      "contact_person": "",
+      "mobile": "+86 186 1113 8169",
+      "note": "emergency mobile"
+    }
+  ],
+  "Emirate": [
+    {
+      "id": "venue_concept_uae",
+      "name": "Venue Concept Tourism LLC",
+      "contact_person": "",
+      "mobile": "+971 50 980 8412",
+      "note": "emergency contact number"
+    }
+  ],
+  "Finnland / Lappland": [
+    {
+      "id": "balder_finland",
+      "name": "Balder",
+      "contact_person": "Mrs. Khrystyna Diatchuk",
+      "mobile": "+358 50 54 79 192",
+      "note": "emergency: +4745257404 / +37127727617"
+    }
+  ],
+  "Frankreich": [
+    {
+      "id": "vivi_magic_travels",
+      "name": "VIVI (by Magic Travels)",
+      "contact_person": "Mrs. Sofya Keburiya",
+      "mobile": "+33 9 70 44 94 74",
+      "note": "WhatsApp emergency: +33 7 87 88 10 14"
+    }
+  ],
+  "Indien": [
+    {
+      "id": "ak_indien",
+      "name": "Abercrombie & Kent",
+      "contact_person": "Sanjay Malik (deutschsprachig)",
+      "mobile": "+91-9871009403",
+      "note": "emergency contact number"
+    }
+  ],
+  "Indonesien": [
+    {
+      "id": "asia_concierge_indonesia",
+      "name": "Asia Concierge Indonesia",
+      "contact_person": "Mrs. Susiana",
+      "mobile": "+62 811 386 6775",
+      "note": "emergency hotline: +62 811 389 6655 (WhatsApp)"
+    }
+  ],
+  "Island": [
+    {
+      "id": "360_wanderlust_iceland",
+      "name": "360 Wanderlust",
+      "contact_person": "Helena",
+      "mobile": "+354 775 0753",
+      "note": ""
+    }
+  ],
+  "Japan": [
+    {
+      "id": "regency_japan",
+      "name": "Regency Group Inc.",
+      "contact_person": "Isao Numano (Mr.)",
+      "mobile": "+81-80-4405-5751",
+      "note": "emergency contact number"
+    },
+    {
+      "id": "regency_japan_ueno",
+      "name": "Regency Group Inc.",
+      "contact_person": "Ritsuko Ueno (Ms.)",
+      "mobile": "+81-90-8026-6272",
+      "note": ""
+    }
+  ],
+  "Kroatien": [
+    {
+      "id": "calvados_club_croatia",
+      "name": "Calvados Club",
+      "contact_person": "Tihana Zaja (Backup Emergency)",
+      "mobile": "+385 91 61 26 292",
+      "note": "backup: +385 91 91 61-26-221"
+    }
+  ],
+  "Malaysia": [
+    {
+      "id": "exo_travel_malaysia",
+      "name": "Exo Travel Malaysia",
+      "contact_person": "Mrs. Melinda Fred",
+      "mobile": "+60 12 252 3090",
+      "note": "24h emergency (also WhatsApp)"
+    }
+  ],
+  "Nepal": [
+    {
+      "id": "andbeyond_nepal",
+      "name": "&Beyond Nepal",
+      "contact_person": "Reshmi Parajuli",
+      "mobile": "+97 71 453 1296",
+      "note": ""
+    }
+  ],
+  "Norwegen": [
+    {
+      "id": "balder_norway",
+      "name": "Balder",
+      "contact_person": "Mrs. Heili Kukke",
+      "mobile": "+358 403581870",
+      "note": ""
+    },
+    {
+      "id": "driver_guide_raivis",
+      "name": "Driver-Guide Raivis",
+      "contact_person": "Raivis",
+      "mobile": "+358 50 304 8791",
+      "note": ""
+    }
+  ],
+  "Portugal": [
+    {
+      "id": "tours_for_you_portugal",
+      "name": "Tours for You",
+      "contact_person": "Luís Gaivão",
+      "mobile": "+351 91 631 29 19",
+      "note": "24h English-speaking assistance"
+    }
+  ],
+  "Seychellen": [
+    {
+      "id": "7south_seychellen",
+      "name": "7South",
+      "contact_person": "Mrs. Yvonne De Commarmond",
+      "mobile": "+248 2502455",
+      "note": ""
+    },
+    {
+      "id": "hummingbird_seychellen",
+      "name": "Hummingbird Travel",
+      "contact_person": "",
+      "mobile": "+248 251 0078",
+      "note": "emergency; WhatsApp: +248 264 6955"
+    }
+  ],
+  "Singapur": [
+    {
+      "id": "exo_travel_singapore",
+      "name": "Exo Travel Singapore",
+      "contact_person": "Ms. Lina Rafai",
+      "mobile": "+65 9108 3452",
+      "note": "24h emergency (English)"
+    },
+    {
+      "id": "asia_carta_singapore",
+      "name": "Asia / China a la Carta",
+      "contact_person": "",
+      "mobile": "+65 8825 1681",
+      "note": "emergency mobile"
+    }
+  ],
+  "Spanien": [
+    {
+      "id": "ocoa_spain",
+      "name": "Ocoa Spain",
+      "contact_person": "Sara Sánchez",
+      "mobile": "+34 674 341 275",
+      "note": ""
+    }
+  ],
+  "Sri Lanka": [
+    {
+      "id": "andbeyond_srilanka",
+      "name": "&Beyond Sri Lanka",
+      "contact_person": "Rohan (General Manager)",
+      "mobile": "+94 778 327 144",
+      "note": "emergency contact number"
+    },
+    {
+      "id": "imal_guide_srilanka",
+      "name": "&Beyond Sri Lanka – Guide",
+      "contact_person": "Mr. Imal (deutschsprachiger Guide)",
+      "mobile": "+94 71 327 4525",
+      "note": ""
+    }
+  ],
+  "Thailand": [
+    {
+      "id": "asia_concierge_thailand",
+      "name": "Asia Concierge",
+      "contact_person": "Mrs. Pornsurang Sirivandee",
+      "mobile": "+66 6 3212 2707",
+      "note": "emergency number"
+    },
+    {
+      "id": "exo_travel_thailand",
+      "name": "Exo Travel Bangkok",
+      "contact_person": "Mrs. Panjaporn Chan-in",
+      "mobile": "+66 81 867 2806",
+      "note": "emergency (in Thailand dial: 081 867 2806)"
+    },
+    {
+      "id": "exploration_travel_thailand",
+      "name": "Exploration Travel Bangkok",
+      "contact_person": "Mr. Mozz Suraphot Piokliang",
+      "mobile": "+66 64 978 3174",
+      "note": "24/7 emergency (also WhatsApp)"
+    }
+  ],
+  "Türkei": [
+    {
+      "id": "aida_tuerkei",
+      "name": "AIDA",
+      "contact_person": "",
+      "mobile": "+90 533 340 00 46",
+      "note": "emergency; also: +90 533 416 64 99"
+    }
+  ],
+  "Usbekistan": [
+    {
+      "id": "mir_usbekistan",
+      "name": "MIR",
+      "contact_person": "",
+      "mobile": "",
+      "note": "please update contact details"
+    }
+  ],
+  "Vietnam / Kambodscha": [
+    {
+      "id": "easia_exclusive",
+      "name": "Easia Exclusive",
+      "contact_person": "",
+      "mobile": "+84 981 163 443",
+      "note": "emergency German-speaking; English: +84 869 262 342"
+    },
+    {
+      "id": "exo_travel_cambodia",
+      "name": "Exo Travel Cambodia",
+      "contact_person": "",
+      "mobile": "+855 81 908 097",
+      "note": "24h customer care (in Cambodia: 081 908 097)"
+    },
+    {
+      "id": "exo_travel_vietnam",
+      "name": "Exo Travel Vietnam",
+      "contact_person": "",
+      "mobile": "+84 917 332 246",
+      "note": "24h customer care (in Vietnam: 0917 332 246)"
+    },
+    {
+      "id": "asia_concierge_indochina",
+      "name": "Asia Concierge (Laos / Kambodscha / Vietnam)",
+      "contact_person": "Mr. Sokhun Yeang",
+      "mobile": "+855 92 632 078",
+      "note": "Vietnam: +84 98 492 4004 | Cambodia: +855 1251 2927 | Laos: +856 20 5858 9119"
+    }
+  ]
+}
