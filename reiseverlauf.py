@@ -1348,13 +1348,19 @@ has already written and sent to clients for this exact hotel or sight.
   hotel_description — reuse its facts and phrasing, only trimming or lightly
   adapting it to fit this stay. Do not invent competing facts. This reference
   text predates the USP-sentence rule above and will not have one — still
-  append your own closing USP sentence per the HOTEL DESCRIPTIONS rules.
+  append your own closing USP sentence per the HOTEL DESCRIPTIONS rules. It
+  also predates the "Guide" terminology rule above — if it says "Reiseleiter"
+  or "Reiseleitung", change that to "Guide" even though you're otherwise
+  reusing this text closely; that one substitution is not a "competing fact".
 - Sightseeing text behind a {{SIGHT:n}} placeholder: this exact wording is
   already approved and MUST be reused verbatim — do not paraphrase, shorten,
   or rewrite it. Do not write your own sentences about that same sight.
   Instead place the literal placeholder string (e.g. "{{SIGHT:0}}") as its
   own element in body_paragraphs, positioned where that sight belongs in the
-  day's narrative. The exact text gets substituted in afterward.
+  day's narrative. The exact text gets substituted in afterward — this
+  substitution happens outside your control, so an older reference paragraph
+  using "Reiseleiter" instead of "Guide" is corrected automatically later,
+  not something you need to (or can) fix yourself here.
 - A sight marked "bestätigter BAWA-Fakt, aber zu kurz" (no placeholder): treat
   exactly like the semantic-match case below — a confirmed fact to expand on
   with real knowledge, not text to reproduce as-is.
@@ -1370,7 +1376,9 @@ GENERAL LANGUAGE RULES
 - German quotation marks „so" not "so".
 - No Anglicisms unless standard in German travel language (Check-in, Transfer are fine).
 - No meal mentions in body paragraphs.
+- Always call the guide "Guide" — never "Reiseleiter", "Reiseleiterin", "Reiseleitung", or "Reiseführer", even for a local guide ("lokaler Guide", not "lokaler Reiseleiter"). E.g. "Ihr Guide erwartet Sie", "Treffen Sie Ihren Guide", "mit Ihrem deutschsprachigen Guide" — never "Ihre Reiseleitung"/"Ihren Reiseleiter".
 - Logistics (transfers, trains) stay short and factual: "Treffen Sie Ihren Fahrer für den privaten Transfer zum Bahnhof (ca. 50 Minuten)."
+- If the DMC source gives a specific time or time range for an activity (e.g. "Time: 08:30 - 13:00", "10:00 Meet your guide"), include it in the sentence — "Von 08:30 bis 13:00 Uhr...", "Um 10:00 Uhr treffen Sie...". Don't invent a time that isn't in the source, but never drop one that is.
 """
 
 
@@ -1954,6 +1962,74 @@ def _find_missing_bullets(mapping: list, body_paragraphs: list) -> list:
     return missing
 
 
+_GUIDE_ADJ = r"(?:deutsch|englisch|japanisch|französisch|italienisch|spanisch|chinesisch|koreanisch|portugiesisch)sprachige[nrs]?"
+
+
+def _normalize_guide_terminology(text: str) -> str:
+    """BAWA wants the English loanword "Guide" used consistently instead of
+    "Reiseleiter"/"Reiseleiterin"/"Reiseleitung"/"Reiseführer" — including
+    in verbatim-reused reference text pulled from the historical corpus,
+    which predates this preference and can't be relied on to follow a
+    prompt instruction it was never written against. Handled here as a
+    deterministic, mechanical substitution applied to every day's final
+    text (fresh AI prose and reused reference text alike) rather than
+    hoping every generation complies consistently.
+
+    "Guide" is grammatically masculine in German ("der Guide"), so a
+    feminine "Reiseleitung" occurrence needs its article corrected too,
+    not just the noun swapped ("Ihre Reiseleitung" -> "Ihr Guide", not
+    "Ihre Guide"). German's four-case system means the same source phrase
+    can require different target grammar depending on sentence role
+    (subject vs. object), which plain text substitution can't fully
+    resolve — this handles the sentence patterns this app's own prompts
+    and reference corpus actually produce; a rarer phrasing falls back to
+    a plain word swap that may occasionally leave a mismatched article
+    rather than risk a worse mangling.
+    """
+    def _adj(adj_group: str, ending: str) -> str:
+        """Re-ends an adjective (e.g. 'deutschsprachige ') to agree with
+        Guide's case/gender instead of the original feminine/plural noun's."""
+        if not adj_group:
+            return ""
+        stem = re.sub(r"(?:e|er|en|em|es)\s*$", "", adj_group.strip())
+        return f"{stem}{ending} "
+
+    def _cap_like(article: str, replacement: str) -> str:
+        """Preserves sentence-initial capitalization of the matched article."""
+        return replacement[0].upper() + replacement[1:] if article[0].isupper() else replacement
+
+    # Dative, after a preposition: "mit/von/bei Ihrer/Ihrem ... Reiseleitung/Reiseleiter"
+    text = re.sub(
+        rf"\b(mit|von|bei)\s+Ihre[rm]\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?Reiseleit(?:er(?:in)?|ung)\w*\b",
+        lambda m: f"{m.group(1)} Ihrem {_adj(m.group(2), 'en')}Guide",
+        text, flags=re.IGNORECASE,
+    )
+    # Nominative subject: "Ihre/Ihr ... Reiseleitung/Reiseleiter" followed by a 3rd-person verb
+    text = re.sub(
+        rf"\bIhre?\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?Reiseleit(?:er(?:in)?|ung)\w*"
+        rf"(?=\s+(?:erwartet|empfängt|begleitet|bringt|wird|holt|führt))",
+        lambda m: f"Ihr {_adj(m.group(1), 'er')}Guide",
+        text, flags=re.IGNORECASE,
+    )
+    # Accusative object (everything else with a possessive): "Treffen Sie Ihre/Ihren ... Reiseleitung/Reiseleiter"
+    text = re.sub(
+        rf"\bIhre[n]?\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?Reiseleit(?:er(?:in)?|ung)\w*\b",
+        lambda m: f"Ihren {_adj(m.group(1), 'en')}Guide",
+        text, flags=re.IGNORECASE,
+    )
+    # Bare definite/indefinite article: "der/die/ein/eine Reiseleiter/Reiseleitung"
+    text = re.sub(
+        rf"\b(der|die|ein|eine)\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?Reiseleit(?:er(?:in)?|ung)\w*\b",
+        lambda m: _cap_like(m.group(1), f"der {_adj(m.group(2), 'e')}Guide"),
+        text, flags=re.IGNORECASE,
+    )
+    # Anything left over — plain word swap.
+    text = re.sub(r"\bReiseleiter(?:in)?\b", "Guide", text)
+    text = re.sub(r"\bReiseleitung\w*\b", "Guide", text)
+    text = re.sub(r"\bReiseführer\b", "Guide", text)
+    return re.sub(r"\s{2,}", " ", text)
+
+
 def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dict:
     """Generate prose for a single day. Returns {body_paragraphs, hotel_description}."""
     # Free days get the standard fixed line only — no AI call, no invented
@@ -2057,6 +2133,14 @@ def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dic
 
     for bullet in missing:
         print(f"[day-prose] WARNING — {day_label}: bullet {bullet!r} not found in generated text even after retry", flush=True)
+
+    # Deterministic safety net for the "Guide" terminology rule (see
+    # _normalize_guide_terminology's docstring) — catches both fresh AI
+    # prose and verbatim-reused reference text alike, since it runs after
+    # _substitute_sight_placeholders already inserted that text above.
+    result["body_paragraphs"] = [_normalize_guide_terminology(p) for p in result.get("body_paragraphs", [])]
+    if result.get("hotel_description"):
+        result["hotel_description"] = _normalize_guide_terminology(result["hotel_description"])
 
     return result
 
