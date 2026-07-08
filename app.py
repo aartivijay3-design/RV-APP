@@ -134,12 +134,12 @@ async def generate(
 
     # Build document
     body_xml = build_body_xml(itinerary)
-    docx_bytes = inject_into_template(body_xml, destination=itinerary.get("destination", ""))
+    docx_bytes = inject_into_template(body_xml, destination=itinerary.get("destination") or "")
 
     # Derive output filename
-    last = itinerary.get("client_name", "Client").split()[-1]
-    dest = itinerary.get("destination", "Reise").replace(" ", "_")
-    sd = itinerary.get("start_date", "").replace(".", "_")
+    last = (itinerary.get("client_name") or "Client").split()[-1]
+    dest = (itinerary.get("destination") or "Reise").replace(" ", "_")
+    sd = (itinerary.get("start_date") or "").replace(".", "_")
     out_name = f"{last}_{dest}_{sd}.docx"
     out_path = _write_output_docx(out_name, docx_bytes)
 
@@ -223,11 +223,15 @@ async def build_docx(request: Request):
         raise HTTPException(400, "Kein Reiseverlauf übergeben.")
 
     body_xml   = build_body_xml(itinerary, ubersicht_mode=ubersicht_mode)
-    docx_bytes = inject_into_template(body_xml, destination=itinerary.get("destination", ""))
+    docx_bytes = inject_into_template(body_xml, destination=itinerary.get("destination") or "")
 
-    last     = itinerary.get("client_name", "Client").split()[-1]
-    dest     = itinerary.get("destination", "Reise").replace(" ", "_")
-    sd       = itinerary.get("start_date", "").replace(".", "_")
+    # .get(key, default) only falls back when the key is absent — a
+    # DMC-extraction failure can leave it present but explicitly null
+    # (e.g. no date recognized), which used to crash the whole request
+    # with an AttributeError instead of just producing a plainer filename.
+    last     = (itinerary.get("client_name") or "Client").split()[-1]
+    dest     = (itinerary.get("destination") or "Reise").replace(" ", "_")
+    sd       = (itinerary.get("start_date") or "").replace(".", "_")
     out_name = f"{last}_{dest}_{sd}.docx"
     out_path = _write_output_docx(out_name, docx_bytes)
 
@@ -332,9 +336,11 @@ async def generate_confirmation(
     except Exception as e:
         raise HTTPException(500, f"Dokument konnte nicht erstellt werden: {e}")
 
-    # Filename
-    client_last = rechnung_data.get("client_names", ["Client"])[0].split()[-1]
-    dest_en     = rechnung_data.get("destination_en", "Trip").replace(" ", "_")
+    # Filename — .get(key, default) only falls back when the key is absent,
+    # not when it's present but null/empty, which a parsing failure can do.
+    client_names = rechnung_data.get("client_names") or ["Client"]
+    client_last  = (client_names[0] if client_names else "Client").split()[-1]
+    dest_en      = (rechnung_data.get("destination_en") or "Trip").replace(" ", "_")
     out_name    = f"Confirmation_{dest_en}_{client_last}.docx"
     out_path    = _write_output_docx(out_name, docx_bytes)
 
