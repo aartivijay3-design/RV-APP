@@ -1593,6 +1593,14 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
           `Es wurden nur ${(currentStructure.days || []).length} Tage erkannt — bitte mit dem ` +
           `Original-Dokument abgleichen und ggf. fehlende Tage manuell über "+ Tag hinzufügen" ergänzen.`
         );
+      } else if (currentStructure._day_count_mismatch) {
+        const m = currentStructure._day_count_mismatch;
+        alert(
+          `Achtung: Die Reise sollte laut Datum ${m.expected} Tage umfassen, es wurden aber nur ` +
+          `${m.actual} erkannt (z.B. weil ein mehrnächtiger Aufenthalt im Angebot nicht Tag für Tag ` +
+          `aufgeschlüsselt war). Bitte mit dem Original-Dokument abgleichen und fehlende Tage ` +
+          `manuell über "+ Tag hinzufügen" ergänzen.`
+        );
       }
     } catch(err) {
       progress.style.display = 'none';

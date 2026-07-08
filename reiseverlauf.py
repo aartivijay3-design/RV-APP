@@ -994,6 +994,7 @@ STRUCTURE_PROMPT = """Extract the structure from this DMC travel offer. Return O
 }
 
 Rules:
+- THE days ARRAY MUST CONTAIN EXACTLY ONE ENTRY PER CALENDAR DAY OF THE TRIP — from start_date through end_date, no gaps, no merging. This is the single most important rule below. DMC offers often describe a multi-night hotel stay as ONE date-range block instead of listing each night separately — for example "13 Jan – 18 Jan (6 Nights) Phu Quoc Island, Regent Phu Quoc" describes 6 calendar days at ONE hotel with no day-by-day breakdown given. You must still expand that into 6 separate entries in `days` (day_number N through N+5, one per calendar date, same hotel repeated on each, is_first_night true only on the first), not one entry for the whole block. The same applies to a "FREE TIME AT LEISURE" block spanning several nights, or any other stretch with no explicit day-by-day activity list — every one of those nights still gets its own entry, with is_free_day: true and overview_bullets: ["Freizeit"] on the ones with nothing specific listed. Before finishing, count: does the number of entries in `days` equal the number of nights in the trip (or nights + 1 if the departure day also gets its own entry)? If not, you have merged days that must be split apart.
 - location_heading: the place name ONLY — "Hakone", "Kyoto", "Tokyo / Ankunft", "Kyoto - Kinosaki Onsen". NEVER describe the activity type here ("Ganztägige Tour in Hakone", "Halbtägige Tour in Kyoto") — that belongs in overview_bullets, not the heading. Use "/ Ankunft" or "/ Abreise" only on the actual arrival/departure day, and "CityA - CityB" only on a day that transfers between two places.
 - overview_bullets: 2-5 short German noun phrases per day. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
 - activities_raw: copy the English DMC text for that day verbatim — do NOT translate or rewrite it. This will be used later for prose generation.
@@ -1136,6 +1137,17 @@ def generate_cover_subtitle(destination: str, overview: str) -> str:
         return "Eine Reise voller Eindrücke"
 
 
+def _expected_day_count(start_date: str, end_date: str):
+    """Number of calendar days a trip spans, from DD.MM.YYYY start/end dates
+    (inclusive of both). None if either date is missing/unparseable."""
+    from datetime import datetime
+    try:
+        fmt = "%d.%m.%Y"
+        return (datetime.strptime(end_date, fmt) - datetime.strptime(start_date, fmt)).days + 1
+    except Exception:
+        return None
+
+
 def call_ai_structure(dmc_content: str) -> dict:
     """Fast structure-only extraction — no prose writing.
 
@@ -1147,46 +1159,82 @@ def call_ai_structure(dmc_content: str) -> dict:
     whatever completed before the cutoff and flags the result
     ("_truncated": True) — retry once with a much larger budget when that
     flag is set, instead of accepting the shorter itinerary.
+
+    Separately, a DMC offer that describes a multi-night stay as a single
+    date-range block (e.g. "13 Jan – 18 Jan (6 Nights)") rather than one row
+    per night can make the model collapse it into one `days` entry instead
+    of six — the prompt now says explicitly not to do this, but as a safety
+    net the result is also checked against the calendar span implied by its
+    own start_date/end_date, with one corrective retry if they don't match.
     """
     if len(dmc_content) > 50000:
         dmc_content = dmc_content[:50000] + "\n[...truncated...]"
 
-    result = None
-    for max_tok in (32000, 60000):
-        response = _ai_complete(
-            model=AI_MODEL,
-            temperature=0.1,
-            max_tokens=max_tok,
-            messages=[
-                {"role": "system", "content": STRUCTURE_PROMPT},
-                {"role": "user",   "content": f"DMC offer:\n\n{dmc_content}"},
-            ],
-        )
-        raw = response.choices[0].message.content.strip()
-        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-        raw = re.sub(r"\s*```$", "", raw)
-        try:
-            # strict=False tolerates a raw control character (e.g. a literal
-            # newline) inside a string value instead of the escaped \n —
-            # Gemini occasionally copies a multi-line DMC note verbatim like
-            # that, which strict JSON parsing rejects outright even though
-            # the structure is otherwise perfectly valid.
-            return json.loads(raw, strict=False)
-        except json.JSONDecodeError:
-            result = json.loads(_repair_truncated_json(raw), strict=False)
-            if not result.get("_truncated"):
-                return result
-            print(
-                f"[structure] WARNING — output truncated at max_tokens={max_tok} "
-                f"({len(result.get('days', []))} days recovered) — retrying with a larger budget",
-                flush=True,
+    def _run(user_content: str) -> dict:
+        result = None
+        for max_tok in (32000, 60000):
+            response = _ai_complete(
+                model=AI_MODEL,
+                temperature=0.1,
+                max_tokens=max_tok,
+                messages=[
+                    {"role": "system", "content": STRUCTURE_PROMPT},
+                    {"role": "user",   "content": user_content},
+                ],
             )
+            raw = response.choices[0].message.content.strip()
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+            try:
+                # strict=False tolerates a raw control character (e.g. a
+                # literal newline) inside a string value instead of the
+                # escaped \n — Gemini occasionally copies a multi-line DMC
+                # note verbatim like that, which strict JSON parsing rejects
+                # outright even though the structure is otherwise valid.
+                return json.loads(raw, strict=False)
+            except json.JSONDecodeError:
+                result = json.loads(_repair_truncated_json(raw), strict=False)
+                if not result.get("_truncated"):
+                    return result
+                print(
+                    f"[structure] WARNING — output truncated at max_tokens={max_tok} "
+                    f"({len(result.get('days', []))} days recovered) — retrying with a larger budget",
+                    flush=True,
+                )
+        print(
+            f"[structure] WARNING — structure extraction still truncated after retry; "
+            f"returning {len(result.get('days', []))} days. The source document may be unusually long.",
+            flush=True,
+        )
+        return result
 
-    print(
-        f"[structure] WARNING — structure extraction still truncated after retry; "
-        f"returning {len(result.get('days', []))} days. The source document may be unusually long.",
-        flush=True,
-    )
+    result = _run(f"DMC offer:\n\n{dmc_content}")
+
+    expected = _expected_day_count(result.get("start_date", ""), result.get("end_date", ""))
+    actual = len(result.get("days", []))
+    if expected and actual < expected:
+        print(
+            f"[structure] WARNING — expected {expected} days ({result.get('start_date')} – "
+            f"{result.get('end_date')}) but got {actual} — retrying with an explicit day count",
+            flush=True,
+        )
+        retry_msg = (
+            f"DMC offer:\n\n{dmc_content}\n\n"
+            f"WICHTIGER HINWEIS: Deine Analyse muss GENAU {expected} Tage ergeben — die Reise geht "
+            f"von {result.get('start_date')} bis {result.get('end_date')}, ein Eintrag pro Kalendertag. "
+            f"Falls das Angebot einen mehrnächtigen Aufenthalt als EINEN Zeitraum beschreibt "
+            f"(z.B. \"(6 Nights)\"), teile ihn in einzelne Tageseinträge auf — gleiches Hotel auf "
+            f"jedem, is_free_day: true für Nächte ohne eigene Aktivität. Erstelle jetzt alle "
+            f"{expected} Tage, keinen weniger."
+        )
+        retry_result = _run(retry_msg)
+        retry_actual = len(retry_result.get("days", []))
+        if retry_actual > actual:
+            result, actual = retry_result, retry_actual
+        if actual < expected:
+            print(f"[structure] WARNING — still only {actual}/{expected} days after retry", flush=True)
+            result["_day_count_mismatch"] = {"expected": expected, "actual": actual}
+
     return result
 
 
