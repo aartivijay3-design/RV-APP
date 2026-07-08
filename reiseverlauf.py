@@ -985,7 +985,7 @@ STRUCTURE_PROMPT = """Extract the structure from this DMC travel offer. Return O
         "meal_plan": "Frühstück",
         "is_first_night": true
       },
-      "activities_raw": "Arrival Kyoto. Transfer to hotel. Evening at leisure."
+      "day_marker": "Arrival Kyoto. Transfer to hotel."
     }
   ],
   "leistungen": {
@@ -1004,7 +1004,7 @@ Rules:
 - THE days ARRAY MUST CONTAIN EXACTLY ONE ENTRY PER CALENDAR DAY OF THE TRIP — from start_date through end_date, no gaps, no merging. This is the single most important rule below. DMC offers often describe a multi-night hotel stay as ONE date-range block instead of listing each night separately — for example "13 Jan – 18 Jan (6 Nights) Phu Quoc Island, Regent Phu Quoc" describes 6 calendar days at ONE hotel with no day-by-day breakdown given. You must still expand that into 6 separate entries in `days` (day_number N through N+5, one per calendar date, same hotel repeated on each, is_first_night true only on the first), not one entry for the whole block. The same applies to a "FREE TIME AT LEISURE" block spanning several nights, or any other stretch with no explicit day-by-day activity list — every one of those nights still gets its own entry, with is_free_day: true and overview_bullets: ["Freizeit"] on the ones with nothing specific listed. Before finishing, count: does the number of entries in `days` equal the number of nights in the trip (or nights + 1 if the departure day also gets its own entry)? If not, you have merged days that must be split apart.
 - location_heading: the place name ONLY — "Hakone", "Kyoto", "Tokyo / Ankunft", "Kyoto - Kinosaki Onsen". NEVER describe the activity type here ("Ganztägige Tour in Hakone", "Halbtägige Tour in Kyoto") — that belongs in overview_bullets, not the heading. Use "/ Ankunft" or "/ Abreise" only on the actual arrival/departure day, and "CityA - CityB" only on a day that transfers between two places.
 - overview_bullets: 2-5 short German noun phrases per day. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
-- activities_raw: copy the English DMC text for that day verbatim — do NOT translate or rewrite it. This will be used later for prose generation.
+- day_marker: a SHORT (8-15 words) EXACT, character-for-character excerpt copied verbatim from the very START of this day's section in the source document — the day's header line if there is one (e.g. "DAY SEVEN - MONDAY, 11 JAN 2027"), or the first distinctive sentence describing that day if there's no explicit header. This is used afterward to programmatically locate the day in the original text and slice out its real content, so precision matters more here than for any other field — copy it EXACTLY as it appears (capitalization, punctuation, spacing), never paraphrase, translate, reformat, or summarize it. Pick a phrase that is UNIQUE within the whole document — never a generic word/phrase that also occurs elsewhere ("Breakfast", "Overnight stay", a bare date that repeats). For a multi-night block with no day-by-day breakdown (see the days-array rule above), every expanded day within that same block shares the IDENTICAL day_marker pointing to where the block begins — do not invent different markers for days that have no distinct text of their own.
 - hotel.is_first_night = true only on first arrival at each hotel.
 - Weekdays in German. Dates: DD.MM.YYYY.
 - Meal plan: BB→Frühstück, HB→Halbpension, FB→Vollpension, AI→All-inclusive.
@@ -1155,7 +1155,117 @@ def _expected_day_count(start_date: str, end_date: str):
         return None
 
 
-def _validate_structure(result: dict, dmc_content: str) -> dict:
+def _find_marker(haystack: str, marker: str, start: int = 0) -> int:
+    """Locates `marker` in haystack[start:], tolerant of whitespace/case
+    differences the AI can introduce even when asked to copy "verbatim" —
+    returns the absolute position in haystack, or -1 if not found."""
+    marker = (marker or "").strip()
+    if not marker:
+        return -1
+    window = haystack[start:]
+
+    pos = window.find(marker)
+    if pos != -1:
+        return start + pos
+
+    pos = window.lower().find(marker.lower())
+    if pos != -1:
+        return start + pos
+
+    # Whitespace-normalized search (collapse all runs of whitespace to a
+    # single space on both sides), mapping each normalized index back to
+    # its position in the original text.
+    norm_chars, orig_positions, prev_space = [], [], False
+    for idx, ch in enumerate(window):
+        if ch.isspace():
+            if not prev_space:
+                norm_chars.append(" ")
+                orig_positions.append(idx)
+            prev_space = True
+        else:
+            norm_chars.append(ch.lower())
+            orig_positions.append(idx)
+            prev_space = False
+    norm_window = "".join(norm_chars)
+    norm_marker = re.sub(r"\s+", " ", marker.lower()).strip()
+    npos = norm_window.find(norm_marker)
+    if npos != -1:
+        return start + orig_positions[npos]
+
+    # Last resort: the AI may have appended or slightly altered the tail of
+    # the marker — retry with just its first few words.
+    words = marker.split()
+    if len(words) > 6:
+        return _find_marker(haystack, " ".join(words[:6]), start)
+    return -1
+
+
+def _slice_activities_by_markers(days: list, dmc_content: str) -> list:
+    """Populates each day's activities_raw by locating its `day_marker` in
+    the ORIGINAL source text and slicing the verbatim text between this
+    day's marker and the next resolvable day's marker. This is what
+    replaced asking the AI to reproduce activities_raw itself: on a long,
+    dense document the model would lose track partway through and either
+    truncate or fabricate entirely fictional content for later days (see
+    call_ai_structure's docstring) — slicing the real source text in
+    Python instead makes that class of error structurally impossible, at
+    the cost of only a locate-the-boundary task for the AI, which is far
+    lighter than faithfully reproducing paragraphs of prose.
+
+    Markers are resolved in day order with a forward-only search cursor,
+    so a generic phrase that happens to repeat elsewhere in the document
+    can't match an earlier or later occurrence than the one intended.
+    Consecutive days sharing an identical marker (a multi-night block with
+    no day-by-day breakdown — every expanded day points at the same block
+    start) get the block's full text on the first of them and an empty
+    string on the rest, rather than an empty slice for all of them.
+
+    Returns the day_numbers whose marker couldn't be located at all —
+    day-prose generation already has its own fallback for thin/missing
+    source text, so an unresolved day still degrades gracefully.
+    """
+    n = len(days)
+    positions = [-1] * n
+    search_from = 0
+    for i, day in enumerate(days):
+        marker = (day.get("day_marker") or "").strip()
+        prev_marker = (days[i - 1].get("day_marker") or "").strip() if i > 0 else None
+        if i > 0 and marker and marker == prev_marker and positions[i - 1] != -1:
+            # Identical to the previous day's marker (a multi-night block
+            # with no day-by-day breakdown) — reuse its position directly.
+            # Re-searching from the cursor would fail here: the cursor has
+            # already advanced past the marker's one and only occurrence,
+            # so a fresh search from that point always finds nothing,
+            # wrongly landing this day in "unresolved" instead of
+            # "duplicate of the previous day".
+            positions[i] = positions[i - 1]
+            continue
+        pos = _find_marker(dmc_content, marker, search_from)
+        positions[i] = pos
+        if pos != -1:
+            search_from = pos + 1
+
+    unresolved = []
+    for i, day in enumerate(days):
+        start = positions[i]
+        if start == -1:
+            day["activities_raw"] = ""
+            unresolved.append(day.get("day_number"))
+            continue
+        if i > 0 and positions[i - 1] == start:
+            day["activities_raw"] = ""
+            continue
+        end = len(dmc_content)
+        for j in range(i + 1, n):
+            if positions[j] != -1 and positions[j] > start:
+                end = positions[j]
+                break
+        day["activities_raw"] = dmc_content[start:end].strip()[:4000]
+
+    return unresolved
+
+
+def _validate_structure(result: dict, dmc_content: str, unresolved: list = None) -> dict:
     """Cheap, deterministic checks against the result and the original
     source text — catches problems an AI call can introduce that a single
     "did the day count match" check misses:
@@ -1163,26 +1273,40 @@ def _validate_structure(result: dict, dmc_content: str) -> dict:
     - missing: fewer days than the trip's own start_date/end_date implies
       (e.g. a multi-night stay described as one date-range block collapsed
       into a single entry instead of being split per night).
-    - hollow: activities_raw suspiciously short for a day, despite a
-      substantial source document — a sign the model padded out a day with
-      a placeholder instead of genuinely extracting it.
+    - unresolved: day_marker couldn't be located anywhere in the source
+      text (see _slice_activities_by_markers) — usually because the AI
+      paraphrased it instead of copying it verbatim, or invented a marker
+      for a day that doesn't really exist in the source.
     - bad_hotels: a day's hotel name doesn't appear anywhere in the source
       text at all — a strong, cheap signal the model fabricated a
       plausible-sounding hotel instead of reading the actual document for
       that day. Confirmed happening in practice: forcing an exact day count
       via a naive retry made the model correctly hit the count but
       hallucinate an entirely different (fictional) hotel/city for several
-      of the days it needed to "fill in", rather than just writing thin
-      placeholder text (which the hollow-check alone would have missed).
+      of the days it needed to "fill in".
+    - stalled_run: a day_marker repeated for MORE consecutive days than a
+      legitimate undifferentiated multi-night block realistically would
+      (see the threshold below) — a sign the model correctly extracted the
+      first several days, then gave up and duplicated the last one it
+      resolved for the remainder, rather than fabricating anything new.
+      This is the one real failure this validation had to be added for
+      last: day count matched, no marker was individually unresolvable
+      (they're all "found" — just the wrong day's marker reused), and
+      every hotel name genuinely appears in the source (also just for the
+      wrong day) — so the missing/unresolved/bad_hotels checks above all
+      pass while most of the document silently goes unattributed.
+    - low_coverage: total activities_raw length across all days is
+      suspiciously small relative to the source document's total length —
+      the same underlying failure as stalled_run, caught from a different
+      angle in case the duplicated run is broken up rather than one
+      contiguous block.
     """
     days = result.get("days", [])
     expected = _expected_day_count(result.get("start_date", ""), result.get("end_date", ""))
     actual = len(days)
     missing = (expected - actual) if (expected and actual < expected) else 0
 
-    hollow = []
-    if len(dmc_content) > 3000:
-        hollow = [d.get("day_number") for d in days if len((d.get("activities_raw") or "").strip()) < 40]
+    unresolved = unresolved or []
 
     content_lower = dmc_content.lower()
     bad_hotels = []
@@ -1191,43 +1315,92 @@ def _validate_structure(result: dict, dmc_content: str) -> dict:
         if name and name.lower() not in content_lower:
             bad_hotels.append(d.get("day_number"))
 
-    return {"expected": expected, "actual": actual, "missing": missing, "hollow": hollow, "bad_hotels": bad_hotels}
+    stalled_run = 0
+    run = 1
+    for i in range(1, len(days)):
+        prev = (days[i - 1].get("day_marker") or "").strip()
+        cur = (days[i].get("day_marker") or "").strip()
+        if cur and cur == prev:
+            run += 1
+            stalled_run = max(stalled_run, run)
+        else:
+            run = 1
+
+    low_coverage = False
+    if len(dmc_content) > 3000:
+        consumed = sum(len(d.get("activities_raw") or "") for d in days)
+        low_coverage = consumed < 0.55 * len(dmc_content)
+
+    return {
+        "expected": expected, "actual": actual, "missing": missing,
+        "unresolved": unresolved, "bad_hotels": bad_hotels,
+        "stalled_run": stalled_run, "low_coverage": low_coverage,
+    }
+
+
+# A legitimate undifferentiated multi-night block (e.g. "13 Jan – 18 Jan
+# (6 Nights)") realistically runs a handful of nights at most — a run
+# longer than this is far more likely the model stalling out and
+# duplicating its last resolved day forward than a genuine block this long.
+_STALLED_RUN_THRESHOLD = 4
 
 
 def _issue_score(v: dict) -> int:
     """Lower is better — used to pick the more correct of two candidate
-    extraction results (the retry isn't guaranteed to be an improvement)."""
-    return v["missing"] + len(v["hollow"]) + len(v["bad_hotels"])
+    extraction results (the retry isn't guaranteed to be an improvement).
+    stalled_run/low_coverage are weighted heavily since either one means
+    most of the document is silently going unattributed — a far worse
+    outcome than a handful of individually-bad-hotel days."""
+    score = v["missing"] + len(v["unresolved"]) + len(v["bad_hotels"])
+    if v["stalled_run"] > _STALLED_RUN_THRESHOLD:
+        score += v["stalled_run"]
+    if v["low_coverage"]:
+        score += 5
+    return score
 
 
 def call_ai_structure(dmc_content: str) -> dict:
     """Fast structure-only extraction — no prose writing.
 
-    A long itinerary (15+ days, each with hotel details, bullets, and raw
-    activity text) can produce a JSON response too large for a modest
-    max_tokens budget — Gemini's output then gets cut off mid-day, silently
-    dropping every day after the cutoff (e.g. an 18-day trip coming back as
-    10 days) rather than raising an error. _repair_truncated_json() salvages
-    whatever completed before the cutoff and flags the result
+    A long itinerary (15+ days, each with hotel details and bullets) can
+    still produce a JSON response too large for a modest max_tokens budget
+    — Gemini's output then gets cut off mid-day, silently dropping every
+    day after the cutoff rather than raising an error. _repair_truncated_json()
+    salvages whatever completed before the cutoff and flags the result
     ("_truncated": True) — retry once with a much larger budget when that
     flag is set, instead of accepting the shorter itinerary.
 
-    Separately — and only after the above succeeds — _validate_structure()
-    checks the result for problems a naive day-count check misses (see its
-    docstring), and if any are found, retries ONCE with a single message
-    describing every detected issue together. A separate retry per issue
-    type was tried first and made things worse: correcting one issue at a
-    time gave the model repeated opportunities to "fix" the symptom being
-    checked while introducing a different failure for the days it had to
-    fill in (first placeholder-thin days, then fully fabricated hotels).
-    Whichever of the original or retried result has fewer total issues
-    wins; anything still wrong after that one retry is flagged on the
-    result for the frontend to warn about rather than silently shipped.
+    activities_raw is NOT written by the AI at all — asking it to
+    faithfully reproduce potentially 2000+ characters of verbatim source
+    text per day, for 15+ days, in one long generation, turned out to be
+    unreliable in practice: on a long, dense real document the model
+    correctly handled the first 5-6 days and then, for the rest, either
+    truncated outright or (worse, and easy to miss) fabricated entirely
+    fictional hotels/content that never appeared anywhere in the source,
+    while still nominally hitting the right day count. Instead, the AI
+    only supplies a short `day_marker` — a verbatim excerpt marking where
+    each day's section starts — and _slice_activities_by_markers() locates
+    those markers in the ORIGINAL source text and slices activities_raw in
+    Python. This makes fabricated content structurally impossible (a slice
+    is either a real excerpt of the source or empty), and is a far lighter
+    task for the model than reproducing long text blocks, since it only
+    has to identify boundaries.
+
+    _validate_structure() then checks the result for problems a naive
+    day-count check misses (see its docstring), and if any are found,
+    retries ONCE with a single message describing every detected issue
+    together. A separate retry per issue type was tried first and made
+    things worse: correcting one issue at a time gave the model repeated
+    opportunities to "fix" the symptom being checked while introducing a
+    different failure for the days it had to fill in. Whichever of the
+    original or retried result has fewer total issues wins; anything still
+    wrong after that one retry is flagged on the result for the frontend
+    to warn about rather than silently shipped.
     """
     if len(dmc_content) > 50000:
         dmc_content = dmc_content[:50000] + "\n[...truncated...]"
 
-    def _run(user_content: str) -> dict:
+    def _run(user_content: str) -> tuple:
         result = None
         for max_tok in (32000, 60000):
             response = _ai_complete(
@@ -1245,30 +1418,39 @@ def call_ai_structure(dmc_content: str) -> dict:
             try:
                 # strict=False tolerates a raw control character (e.g. a
                 # literal newline) inside a string value instead of the
-                # escaped \n — Gemini occasionally copies a multi-line DMC
-                # note verbatim like that, which strict JSON parsing rejects
-                # outright even though the structure is otherwise valid.
-                return json.loads(raw, strict=False)
+                # escaped \n — Gemini occasionally copies one verbatim like
+                # that, which strict JSON parsing rejects outright even
+                # though the structure is otherwise valid.
+                parsed = json.loads(raw, strict=False)
+                truncated = False
             except json.JSONDecodeError:
-                result = json.loads(_repair_truncated_json(raw), strict=False)
-                if not result.get("_truncated"):
-                    return result
+                parsed = json.loads(_repair_truncated_json(raw), strict=False)
+                truncated = bool(parsed.get("_truncated"))
+                if not truncated:
+                    unresolved = _slice_activities_by_markers(parsed.get("days", []), dmc_content)
+                    return parsed, unresolved
                 print(
                     f"[structure] WARNING — output truncated at max_tokens={max_tok} "
-                    f"({len(result.get('days', []))} days recovered) — retrying with a larger budget",
+                    f"({len(parsed.get('days', []))} days recovered) — retrying with a larger budget",
                     flush=True,
                 )
+                result = parsed
+                continue
+            unresolved = _slice_activities_by_markers(parsed.get("days", []), dmc_content)
+            return parsed, unresolved
         print(
             f"[structure] WARNING — structure extraction still truncated after retry; "
             f"returning {len(result.get('days', []))} days. The source document may be unusually long.",
             flush=True,
         )
-        return result
+        unresolved = _slice_activities_by_markers(result.get("days", []), dmc_content)
+        return result, unresolved
 
-    result = _run(f"DMC offer:\n\n{dmc_content}")
-    v = _validate_structure(result, dmc_content)
+    result, unresolved = _run(f"DMC offer:\n\n{dmc_content}")
+    v = _validate_structure(result, dmc_content, unresolved)
 
-    if v["missing"] or v["hollow"] or v["bad_hotels"]:
+    stalled = v["stalled_run"] > _STALLED_RUN_THRESHOLD
+    if v["missing"] or v["unresolved"] or v["bad_hotels"] or stalled or v["low_coverage"]:
         problems = []
         if v["missing"]:
             problems.append(
@@ -1279,16 +1461,25 @@ def call_ai_structure(dmc_content: str) -> dict:
                 f"einzelne Tage auf, gleiches Hotel auf jedem, is_free_day: true wo keine Aktivität "
                 f"genannt ist."
             )
-        if v["hollow"]:
+        if v["unresolved"]:
             problems.append(
-                f"Die Tage {v['hollow']} hatten kaum extrahierten Text (activities_raw fast leer), "
-                f"obwohl das Quelldokument für diese Daten ausführliche Beschreibungen enthält. "
-                f"Vermutlich wurden sie nur als Platzhalter eingefügt."
+                f"Die Tage {v['unresolved']} hatten ein day_marker, das im Quelldokument nicht exakt "
+                f"gefunden werden konnte — der Marker muss WORTWÖRTLICH (Zeichen für Zeichen) aus dem "
+                f"Dokument kopiert sein, nicht paraphrasiert oder übersetzt."
             )
         if v["bad_hotels"]:
             problems.append(
                 f"Die Tage {v['bad_hotels']} nennen ein Hotel, das im Quelldokument an keiner Stelle "
                 f"vorkommt — vermutlich erfunden statt aus dem Text übernommen."
+            )
+        if stalled or v["low_coverage"]:
+            problems.append(
+                f"Ein Großteil des Dokuments wurde offenbar NICHT ausgewertet — vermutlich wurde nach "
+                f"einigen Tagen abgebrochen und derselbe day_marker/dasselbe Hotel für alle "
+                f"restlichen Tage wiederholt, statt für JEDEN Tag im Dokument nachzusehen, was dort "
+                f"wirklich steht. Das gesamte Dokument enthält für jeden Tag eigene, unterscheidbare "
+                f"Abschnitte (auch spätere Tage) — diese dürfen nicht übersprungen oder durch den "
+                f"letzten erfolgreich erkannten Tag ersetzt werden."
             )
         print(f"[structure] WARNING — issues found: {' | '.join(problems)} — retrying once", flush=True)
         retry_msg = (
@@ -1296,23 +1487,27 @@ def call_ai_structure(dmc_content: str) -> dict:
             f"WICHTIGER HINWEIS zu deiner vorherigen Antwort:\n"
             + "\n".join(f"- {p}" for p in problems)
             + f"\n\nLies das GESAMTE Dokument von Anfang bis Ende noch einmal sorgfältig und "
-              f"vollständig durch. Für JEDEN Tag: das tatsächliche, im Dokument genannte Hotel und "
-              f"Ort für GENAU dieses Datum (niemals ein Hotel/Ort aus dem Dokument für ein anderes "
-              f"Datum wiederverwenden oder ein neues erfinden), und der vollständige englische "
-              f"Aktivitätstext in activities_raw."
+              f"vollständig durch, bis zum letzten Tag. Für JEDEN Tag: das tatsächliche, im Dokument "
+              f"genannte Hotel und Ort für GENAU dieses Datum (niemals ein Hotel/Ort aus dem Dokument "
+              f"für ein anderes Datum wiederverwenden oder ein neues erfinden), und ein day_marker, "
+              f"der WORTWÖRTLICH und exakt aus dem Dokument kopiert ist und speziell zu DIESEM Tag "
+              f"gehört."
         )
-        retry_result = _run(retry_msg)
-        retry_v = _validate_structure(retry_result, dmc_content)
+        retry_result, retry_unresolved = _run(retry_msg)
+        retry_v = _validate_structure(retry_result, dmc_content, retry_unresolved)
         if _issue_score(retry_v) < _issue_score(v):
             result, v = retry_result, retry_v
+            stalled = v["stalled_run"] > _STALLED_RUN_THRESHOLD
 
         if v["missing"]:
             result["_day_count_mismatch"] = {"expected": v["expected"], "actual": v["actual"]}
-        if v["hollow"]:
-            result["_hollow_days"] = v["hollow"]
+        if v["unresolved"]:
+            result["_hollow_days"] = v["unresolved"]
         if v["bad_hotels"]:
             result["_hallucinated_hotel_days"] = v["bad_hotels"]
-        if v["missing"] or v["hollow"] or v["bad_hotels"]:
+        if stalled or v["low_coverage"]:
+            result["_stalled_extraction"] = True
+        if v["missing"] or v["unresolved"] or v["bad_hotels"] or stalled or v["low_coverage"]:
             print(f"[structure] WARNING — issues remain after retry: {v}", flush=True)
 
     return result

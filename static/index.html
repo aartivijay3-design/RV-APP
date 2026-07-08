@@ -1615,6 +1615,14 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
             `Hotel im Original-Dokument nicht vor — vermutlich falsch erkannt.`
           );
         }
+        if (currentStructure._stalled_extraction) {
+          warnings.push(
+            `Ein Großteil des Dokuments wurde vermutlich nicht ausgewertet — die KI scheint nach ` +
+            `einigen Tagen abgebrochen und Ort/Hotel der letzten erkannten Tage für den Rest der ` +
+            `Reise wiederholt zu haben. Bitte JEDEN Tag mit dem Original-Dokument abgleichen, ` +
+            `besonders die späteren.`
+          );
+        }
         if (warnings.length) {
           alert(
             `Achtung, bitte prüfen:\n\n${warnings.join('\n\n')}\n\n` +
