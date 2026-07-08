@@ -27996,6 +27996,14 @@
       "language": "de",
       "text": "Der Tsukiji-Markt ist einer der berühmtesten und belebtesten Lebensmittelmärkte in \nTokyo und vor allem für seinen lebhaften Markt im Freien bekannt, auf dem frische Meeresfrüchte, \nObst, Gemüse und andere lokale Köstlichkeiten verkauft werden. Er ist ein beliebtes Ziel für \nEinheimische und Touristen und bietet eine einzigartige Gelegenheit, die traditionelle japanische \nEsskultur zu erleben. Sie können durch die engen Gassen schlendern, die von Ständen und kleinen \nRestaurants gesäumt sind, die alles von Sushi bis Street Food anbieten.",
       "location_heading": "Tsukiji-Markt"
+    },
+    {
+      "type": "hotel",
+      "destination": "Sri Lanka",
+      "source_file": "Manuell hinzugefügt (Datenbank-Tab)",
+      "language": "de",
+      "text": "Das Water Garden Sigiriya überzeugt vor allem durch seine außergewöhnlich ruhige Lage inmitten von Wasserläufen, Gärten und viel Natur, wodurch sofort ein Gefühl von Privatsphäre und Entschleunigung entsteht. Die modernen Villen sind großzügig geschnitten und bieten oft einen privaten Pool sowie schöne Ausblicke, was das Haus besonders für anspruchsvolle Gäste attraktiv macht. Hinzu kommen ein guter Spa- und Freizeitbereich sowie die Nähe zu Sigiriya Rock, ideal für kulturelle und zugleich erholsame Aufenthalte.",
+      "hotel_name": "Water Garden Sigiriya"
     }
   ]
 }
