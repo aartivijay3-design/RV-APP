@@ -28012,6 +28012,14 @@
       "language": "de",
       "text": "Bei der Ankunft am Flughafen Colombo bietet der Silk Route Service einen besonders entspannten Start in den Urlaub: Gäste werden direkt nach der Landung von Flughafenmitarbeitern empfangen und durch die Formalitäten begleitet. Gleichzeitig wird das Gepäck übernommen, während man im separaten Lounge-Bereich in Ruhe warten kann.",
       "location_heading": "Arr. Silk Route Service"
+    },
+    {
+      "type": "sightseeing",
+      "destination": "Sri Lanka",
+      "source_file": "Manuell hinzugefügt (Datenbank-Tab)",
+      "language": "de",
+      "text": "Beim Abflug sorgt der Silk Route Service am Flughafen Colombo für einen besonders entspannten und geordneten Ablauf. Sie werden beim Check-in unterstützt, durch die Sicherheits- und Passkontrollen begleitet und können die Wartezeit in einer Lounge angenehmer verbringen. Dadurch entfällt viel Hektik am Flughafen, und Ihr Abflug fühlt sich deutlich komfortabler, schneller und persönlicher an als bei einem regulären Ablauf.",
+      "location_heading": "Dep. Silk Route Service"
     }
   ]
 }
