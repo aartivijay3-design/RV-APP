@@ -1155,6 +1155,51 @@ def _expected_day_count(start_date: str, end_date: str):
         return None
 
 
+def _validate_structure(result: dict, dmc_content: str) -> dict:
+    """Cheap, deterministic checks against the result and the original
+    source text — catches problems an AI call can introduce that a single
+    "did the day count match" check misses:
+
+    - missing: fewer days than the trip's own start_date/end_date implies
+      (e.g. a multi-night stay described as one date-range block collapsed
+      into a single entry instead of being split per night).
+    - hollow: activities_raw suspiciously short for a day, despite a
+      substantial source document — a sign the model padded out a day with
+      a placeholder instead of genuinely extracting it.
+    - bad_hotels: a day's hotel name doesn't appear anywhere in the source
+      text at all — a strong, cheap signal the model fabricated a
+      plausible-sounding hotel instead of reading the actual document for
+      that day. Confirmed happening in practice: forcing an exact day count
+      via a naive retry made the model correctly hit the count but
+      hallucinate an entirely different (fictional) hotel/city for several
+      of the days it needed to "fill in", rather than just writing thin
+      placeholder text (which the hollow-check alone would have missed).
+    """
+    days = result.get("days", [])
+    expected = _expected_day_count(result.get("start_date", ""), result.get("end_date", ""))
+    actual = len(days)
+    missing = (expected - actual) if (expected and actual < expected) else 0
+
+    hollow = []
+    if len(dmc_content) > 3000:
+        hollow = [d.get("day_number") for d in days if len((d.get("activities_raw") or "").strip()) < 40]
+
+    content_lower = dmc_content.lower()
+    bad_hotels = []
+    for d in days:
+        name = ((d.get("hotel") or {}).get("name") or "").strip()
+        if name and name.lower() not in content_lower:
+            bad_hotels.append(d.get("day_number"))
+
+    return {"expected": expected, "actual": actual, "missing": missing, "hollow": hollow, "bad_hotels": bad_hotels}
+
+
+def _issue_score(v: dict) -> int:
+    """Lower is better — used to pick the more correct of two candidate
+    extraction results (the retry isn't guaranteed to be an improvement)."""
+    return v["missing"] + len(v["hollow"]) + len(v["bad_hotels"])
+
+
 def call_ai_structure(dmc_content: str) -> dict:
     """Fast structure-only extraction — no prose writing.
 
@@ -1167,12 +1212,17 @@ def call_ai_structure(dmc_content: str) -> dict:
     ("_truncated": True) — retry once with a much larger budget when that
     flag is set, instead of accepting the shorter itinerary.
 
-    Separately, a DMC offer that describes a multi-night stay as a single
-    date-range block (e.g. "13 Jan – 18 Jan (6 Nights)") rather than one row
-    per night can make the model collapse it into one `days` entry instead
-    of six — the prompt now says explicitly not to do this, but as a safety
-    net the result is also checked against the calendar span implied by its
-    own start_date/end_date, with one corrective retry if they don't match.
+    Separately — and only after the above succeeds — _validate_structure()
+    checks the result for problems a naive day-count check misses (see its
+    docstring), and if any are found, retries ONCE with a single message
+    describing every detected issue together. A separate retry per issue
+    type was tried first and made things worse: correcting one issue at a
+    time gave the model repeated opportunities to "fix" the symptom being
+    checked while introducing a different failure for the days it had to
+    fill in (first placeholder-thin days, then fully fabricated hotels).
+    Whichever of the original or retried result has fewer total issues
+    wins; anything still wrong after that one retry is flagged on the
+    result for the frontend to warn about rather than silently shipped.
     """
     if len(dmc_content) > 50000:
         dmc_content = dmc_content[:50000] + "\n[...truncated...]"
@@ -1216,31 +1266,54 @@ def call_ai_structure(dmc_content: str) -> dict:
         return result
 
     result = _run(f"DMC offer:\n\n{dmc_content}")
+    v = _validate_structure(result, dmc_content)
 
-    expected = _expected_day_count(result.get("start_date", ""), result.get("end_date", ""))
-    actual = len(result.get("days", []))
-    if expected and actual < expected:
-        print(
-            f"[structure] WARNING — expected {expected} days ({result.get('start_date')} – "
-            f"{result.get('end_date')}) but got {actual} — retrying with an explicit day count",
-            flush=True,
-        )
+    if v["missing"] or v["hollow"] or v["bad_hotels"]:
+        problems = []
+        if v["missing"]:
+            problems.append(
+                f"Die Analyse ergab nur {v['actual']} von {v['expected']} erwarteten Tagen (Reise von "
+                f"{result.get('start_date')} bis {result.get('end_date')}). Jeder Kalendertag braucht "
+                f"einen eigenen Eintrag — falls das Angebot einen mehrnächtigen Aufenthalt als einen "
+                f"Zeitraum beschreibt (z.B. \"(6 Nights)\" oder \"FROM DAY X TO DAY Y\"), teile ihn in "
+                f"einzelne Tage auf, gleiches Hotel auf jedem, is_free_day: true wo keine Aktivität "
+                f"genannt ist."
+            )
+        if v["hollow"]:
+            problems.append(
+                f"Die Tage {v['hollow']} hatten kaum extrahierten Text (activities_raw fast leer), "
+                f"obwohl das Quelldokument für diese Daten ausführliche Beschreibungen enthält. "
+                f"Vermutlich wurden sie nur als Platzhalter eingefügt."
+            )
+        if v["bad_hotels"]:
+            problems.append(
+                f"Die Tage {v['bad_hotels']} nennen ein Hotel, das im Quelldokument an keiner Stelle "
+                f"vorkommt — vermutlich erfunden statt aus dem Text übernommen."
+            )
+        print(f"[structure] WARNING — issues found: {' | '.join(problems)} — retrying once", flush=True)
         retry_msg = (
             f"DMC offer:\n\n{dmc_content}\n\n"
-            f"WICHTIGER HINWEIS: Deine Analyse muss GENAU {expected} Tage ergeben — die Reise geht "
-            f"von {result.get('start_date')} bis {result.get('end_date')}, ein Eintrag pro Kalendertag. "
-            f"Falls das Angebot einen mehrnächtigen Aufenthalt als EINEN Zeitraum beschreibt "
-            f"(z.B. \"(6 Nights)\"), teile ihn in einzelne Tageseinträge auf — gleiches Hotel auf "
-            f"jedem, is_free_day: true für Nächte ohne eigene Aktivität. Erstelle jetzt alle "
-            f"{expected} Tage, keinen weniger."
+            f"WICHTIGER HINWEIS zu deiner vorherigen Antwort:\n"
+            + "\n".join(f"- {p}" for p in problems)
+            + f"\n\nLies das GESAMTE Dokument von Anfang bis Ende noch einmal sorgfältig und "
+              f"vollständig durch. Für JEDEN Tag: das tatsächliche, im Dokument genannte Hotel und "
+              f"Ort für GENAU dieses Datum (niemals ein Hotel/Ort aus dem Dokument für ein anderes "
+              f"Datum wiederverwenden oder ein neues erfinden), und der vollständige englische "
+              f"Aktivitätstext in activities_raw."
         )
         retry_result = _run(retry_msg)
-        retry_actual = len(retry_result.get("days", []))
-        if retry_actual > actual:
-            result, actual = retry_result, retry_actual
-        if actual < expected:
-            print(f"[structure] WARNING — still only {actual}/{expected} days after retry", flush=True)
-            result["_day_count_mismatch"] = {"expected": expected, "actual": actual}
+        retry_v = _validate_structure(retry_result, dmc_content)
+        if _issue_score(retry_v) < _issue_score(v):
+            result, v = retry_result, retry_v
+
+        if v["missing"]:
+            result["_day_count_mismatch"] = {"expected": v["expected"], "actual": v["actual"]}
+        if v["hollow"]:
+            result["_hollow_days"] = v["hollow"]
+        if v["bad_hotels"]:
+            result["_hallucinated_hotel_days"] = v["bad_hotels"]
+        if v["missing"] or v["hollow"] or v["bad_hotels"]:
+            print(f"[structure] WARNING — issues remain after retry: {v}", flush=True)
 
     return result
 
