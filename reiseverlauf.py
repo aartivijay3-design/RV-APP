@@ -507,6 +507,13 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
 
     # Days — merge consecutive free days into one combined section
     def _is_free(day):
+        # A day with real generated/entered text is never a free day,
+        # regardless of overview_bullets — manually added days (via "+ Tag
+        # hinzufügen") never populate overview_bullets at all, which made
+        # this treat every one of them as free and silently drop its
+        # body_paragraphs (the free-day branch never renders them).
+        if any(p.strip() for p in day.get("body_paragraphs", [])):
+            return False
         bullets = day.get("overview_bullets", [])
         if not bullets:
             return True
