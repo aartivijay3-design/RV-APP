@@ -158,7 +158,15 @@ async def extract_structure(
 ):
     """Step 1 — extract day structure (no prose). Returns JSON for the editor UI."""
     if pasted_text.strip():
-        dmc_content = pasted_text.strip()[:12000]
+        # No truncation here — call_ai_structure applies its own size caps
+        # internally (50000 chars) and switches to a chunked extraction
+        # path above 9000 chars. This used to cap pasted text at 12000
+        # chars, silently cutting off longer itineraries mid-day (a real
+        # 22,000-char document was being truncated mid-Day-7) with no
+        # error or warning — the file-upload path below never had this
+        # limit, so pasted text was quietly less capable than uploading
+        # the same content as a file.
+        dmc_content = pasted_text.strip()
     elif file and file.filename:
         file_bytes = await file.read()
         try:

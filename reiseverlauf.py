@@ -1014,6 +1014,256 @@ Rules:
 - client_name: ALWAYS in German format "Familie [Nachname]" (e.g. Familie Schiff, Familie Grundler). Extract the family name and prefix with "Familie". Never use English ("The X family" or "X Family"). If group name, keep it as-is but in German.
 """
 
+
+# ── Chunked extraction — for documents too long/dense to reliably process
+# in one completion (see call_ai_structure's docstring for why). Splits the
+# source into overlapping windows small enough that the model handles each
+# one reliably (empirically solid up to ~5-6 days), extracts days from each
+# independently, then merges by date in Python — sidestepping cross-chunk
+# day-numbering consistency entirely, since day_number gets recomputed from
+# sorted dates after merging rather than trusted from any one chunk.
+STRUCTURE_METADATA_PROMPT = """Extract only the TRIP-LEVEL summary from this DMC travel offer — do NOT extract day-by-day details, only what's below.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "client_name": "Familie Grundler",
+  "destination": "Japan",
+  "pax": 4,
+  "leistungen": {
+    "reiseteilnehmer": "Familie Grundler (4 Personen)",
+    "special_experiences": ["Private Rikscha-Fahrt durch den Bambushain Arashiyama"],
+    "hotel_nights": [
+      {"nights": 5, "city": "Kyoto", "hotel": "Six Senses Kyoto", "room_type": "Deluxe Junior Suite", "meal_plan": "Frühstück"}
+    ],
+    "has_train_tickets": false
+  }
+}
+
+Rules:
+- client_name: ALWAYS "Familie [Nachname]" in German (e.g. "Familie Schiff"). Never English ("The X family").
+- destination: the country/region in German, e.g. "Japan", "Vietnam und Singapur".
+- hotel_nights: one entry per hotel (not per day), with the correct total night count and exact room type.
+- special_experiences: only genuinely distinctive/bookable experiences explicitly named in the offer, not generic sightseeing.
+"""
+
+STRUCTURE_CHUNK_PROMPT = """You are given ONE EXCERPT from a longer multi-day DMC (destination management company) travel offer — not the whole document. This excerpt may begin or end mid-day; overlap with adjacent excerpts covering the same document is expected and fine.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{"days": [
+  {
+    "day_number": 1,
+    "weekday": "Montag",
+    "date": "22.06.2026",
+    "location_heading": "Kyoto / Ankunft",
+    "is_free_day": false,
+    "overview_bullets": ["Ankunft Kansai International Airport", "Transfer zum Hotel"],
+    "hotel": {
+      "name": "Six Senses Kyoto",
+      "room_type": "Deluxe Junior Suite",
+      "meal_plan": "Frühstück",
+      "is_first_night": true
+    },
+    "day_marker": "Arrival Kyoto. Transfer to hotel."
+  }
+]}
+
+Rules:
+- Only include a day whose content is FULLY visible in this excerpt. If a day's description is visibly cut off at the very start or end of what you're given (trails off with no clear beginning/end), do NOT include it — an overlapping adjacent excerpt covers it completely elsewhere. It's fine and expected for a day to also appear in an adjacent excerpt; duplicates get merged and de-duplicated afterward by date.
+- date: the actual calendar date for this day, DD.MM.YYYY — get this right even when unsure of day_number, since date (not day_number) is what's used to merge and order days across excerpts.
+- day_number: your best guess at this day's position in the OVERALL trip if there's a visible ordinal ("DAY SEVEN" → 7) — but this gets recalculated from `date` after merging regardless, so don't worry if you can't tell.
+- The days-array-per-calendar-day rule still applies within what you can see: a multi-night stay described as one date-range block (e.g. "13 Jan – 18 Jan (6 Nights)") must still be expanded into one entry per night, same hotel repeated, is_first_night true only on the first, is_free_day: true and overview_bullets: ["Freizeit"] where no day-specific activity is given.
+- location_heading: place name ONLY, never the activity type. "/ Ankunft" or "/ Abreise" only on the actual arrival/departure day.
+- overview_bullets: 2-5 short German noun phrases. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
+- day_marker: a SHORT (8-15 words) EXACT, character-for-character excerpt copied verbatim from the very START of this day's section — the day's header line if there is one, or the first distinctive sentence if not. Used afterward to locate the day in the original text and slice its real content, so precision matters more here than for any other field — never paraphrase, translate, reformat, or summarize it. Pick a phrase UNIQUE within the document — not a generic word/phrase that also occurs elsewhere. Every expanded day within an undifferentiated multi-night block shares the IDENTICAL day_marker pointing to where that block begins.
+- hotel.is_first_night = true only on first arrival at each hotel (within what's visible in this excerpt — a day continuing an already-established hotel stay from before this excerpt should still be false).
+- Weekdays in German. Meal plan: BB→Frühstück, HB→Halbpension, FB→Vollpension, AI→All-inclusive.
+- Do NOT write body_paragraphs, client_name, destination, or any trip-level field — days only.
+"""
+
+
+def _chunk_text(text: str, chunk_size: int = 9000, overlap: int = 2000) -> list:
+    """Splits text into overlapping windows — the overlap ensures a day
+    whose text falls near a chunk boundary is still fully contained in at
+    least one chunk, so the chunk prompt's "skip if visibly cut off" rule
+    doesn't end up dropping it from every chunk."""
+    if len(text) <= chunk_size:
+        return [text]
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunks.append(text[start:end])
+        if end == len(text):
+            break
+        start = end - overlap
+    return chunks
+
+
+def _run_chunk_days(chunk_text: str) -> list:
+    """Extracts whatever complete days are visible in one chunk. Errors are
+    swallowed (returns []) rather than raised — one bad chunk shouldn't
+    abort the whole document when adjacent overlapping chunks likely cover
+    the same days anyway."""
+    try:
+        response = _ai_complete(
+            model=AI_MODEL,
+            temperature=0.1,
+            max_tokens=16000,
+            messages=[
+                {"role": "system", "content": STRUCTURE_CHUNK_PROMPT},
+                {"role": "user",   "content": chunk_text},
+            ],
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        try:
+            parsed = json.loads(raw, strict=False)
+        except json.JSONDecodeError:
+            parsed = json.loads(_repair_truncated_json(raw), strict=False)
+        return parsed.get("days", [])
+    except Exception as e:
+        print(f"[structure-chunk] WARNING — a chunk failed, skipping it: {e}", flush=True)
+        return []
+
+
+def _run_metadata(dmc_content: str) -> dict:
+    """Trip-level fields only (client_name, destination, pax, leistungen) —
+    a small, cheap, reliable call over the full document regardless of
+    length, since its output never scales with the number of days."""
+    try:
+        response = _ai_complete(
+            model=AI_MODEL,
+            temperature=0.1,
+            max_tokens=4000,
+            messages=[
+                {"role": "system", "content": STRUCTURE_METADATA_PROMPT},
+                {"role": "user",   "content": dmc_content},
+            ],
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        try:
+            return json.loads(raw, strict=False)
+        except json.JSONDecodeError:
+            return json.loads(_repair_truncated_json(raw), strict=False)
+    except Exception as e:
+        print(f"[structure-metadata] WARNING — metadata extraction failed: {e}", flush=True)
+        return {}
+
+
+def _merge_chunk_days(all_days: list) -> list:
+    """Deduplicates days collected from multiple overlapping chunks by
+    date — not day_number, which each chunk guesses independently and
+    can't be trusted to agree across chunks — preferring the most complete
+    entry per date (hotel present, more bullets, longer/more specific
+    day_marker). Sorts by date and renumbers day_number sequentially
+    afterward, so the final numbering is always internally consistent
+    regardless of what any individual chunk guessed."""
+    from datetime import datetime
+
+    def _score(day: dict) -> tuple:
+        return (
+            bool((day.get("hotel") or {}).get("name")),
+            len(day.get("overview_bullets") or []),
+            len(day.get("day_marker") or ""),
+        )
+
+    by_date = {}
+    for d in all_days:
+        date_str = (d.get("date") or "").strip()
+        if not date_str:
+            continue
+        if date_str not in by_date or _score(d) > _score(by_date[date_str]):
+            by_date[date_str] = d
+
+    def _parse(date_str):
+        try:
+            return datetime.strptime(date_str, "%d.%m.%Y")
+        except Exception:
+            return datetime.max
+
+    merged = sorted(by_date.values(), key=lambda d: _parse(d.get("date", "")))
+    for i, d in enumerate(merged):
+        d["day_number"] = i + 1
+    return merged
+
+
+_DE_MONTHS_LONG = {
+    1: "Januar", 2: "Februar", 3: "März", 4: "April", 5: "Mai", 6: "Juni",
+    7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November", 12: "Dezember",
+}
+_DE_WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+
+def _call_ai_structure_chunked(dmc_content: str) -> dict:
+    """The long/dense-document path: splits into overlapping chunks (each
+    small enough to extract reliably), merges by date, and computes every
+    trip-level date field directly from the merged days themselves — never
+    trusted from a single completion that had to hold the whole trip in
+    its "working set" at once, which is the failure mode this exists to
+    avoid (see call_ai_structure's docstring)."""
+    from datetime import datetime
+
+    if len(dmc_content) > 100000:
+        dmc_content = dmc_content[:100000] + "\n[...truncated...]"
+
+    metadata = _run_metadata(dmc_content)
+    chunks = _chunk_text(dmc_content)
+    print(f"[structure-chunk] document is {len(dmc_content)} chars — split into {len(chunks)} chunks", flush=True)
+
+    all_days = []
+    for chunk in chunks:
+        all_days.extend(_run_chunk_days(chunk))
+
+    merged_days = _merge_chunk_days(all_days)
+    unresolved = _slice_activities_by_markers(merged_days, dmc_content)
+
+    result = {
+        "client_name": metadata.get("client_name", "Familie"),
+        "destination": metadata.get("destination", ""),
+        "pax": metadata.get("pax"),
+        "days": merged_days,
+        "leistungen": metadata.get("leistungen", {}),
+    }
+
+    if merged_days:
+        first, last = merged_days[0], merged_days[-1]
+        result["start_date"] = first.get("date", "")
+        result["end_date"] = last.get("date", "")
+        try:
+            start_dt = datetime.strptime(first["date"], "%d.%m.%Y")
+            end_dt = datetime.strptime(last["date"], "%d.%m.%Y")
+            result["start_date_formatted"] = f"{start_dt.day:02d}. {_DE_MONTHS_LONG[start_dt.month]}"
+            result["end_date_formatted"] = f"{end_dt.day:02d}. {_DE_MONTHS_LONG[end_dt.month]} {end_dt.year}"
+            nights = (end_dt - start_dt).days
+            result["duration_label"] = f"{nights + 1} Tage / {nights} Übernachtungen"
+            result["leistungen"].setdefault(
+                "reisedatum",
+                f"{result['start_date_formatted']} bis {result['end_date_formatted']}",
+            )
+            result["leistungen"].setdefault("reisedauer", result["duration_label"])
+            for d in merged_days:
+                if not d.get("weekday"):
+                    dt = datetime.strptime(d["date"], "%d.%m.%Y")
+                    d["weekday"] = _DE_WEEKDAYS[dt.weekday()]
+        except Exception:
+            pass
+
+    v = _validate_structure(result, dmc_content, unresolved)
+    if v["missing"]:
+        result["_day_count_mismatch"] = {"expected": v["expected"], "actual": v["actual"]}
+    if v["unresolved"]:
+        result["_hollow_days"] = v["unresolved"]
+    if v["bad_hotels"]:
+        result["_hallucinated_hotel_days"] = v["bad_hotels"]
+    if v["missing"] or v["unresolved"] or v["bad_hotels"]:
+        print(f"[structure-chunk] WARNING — issues remain after chunked merge: {v}", flush=True)
+
+    return result
+
+
 DAY_PROSE_PROMPT = """You are writing one day of a German-language Reiseverlauf for BAWA Tours & Travel, a German luxury travel agency. Your output will be printed and handed directly to clients.
 
 Return ONLY valid JSON — no markdown, no explanation:
@@ -1359,8 +1609,27 @@ def _issue_score(v: dict) -> int:
     return score
 
 
+# Above this length, a single completion asked to track every day's
+# hotel/location/marker at once becomes unreliable in practice — verified
+# against a real 22,000-char, 15-day document that reliably extracted only
+# its first ~6 days correctly (or worse, fabricated content for the rest)
+# regardless of retries. Below it, the existing single-pass path already
+# tests reliably and doesn't need the extra AI calls chunking costs.
+_CHUNK_THRESHOLD = 9000
+
+
 def call_ai_structure(dmc_content: str) -> dict:
-    """Fast structure-only extraction — no prose writing.
+    """Fast structure-only extraction — no prose writing. Delegates to the
+    chunked path for long/dense documents (see _call_ai_structure_chunked)
+    and the single-pass path otherwise."""
+    if len(dmc_content) > _CHUNK_THRESHOLD:
+        return _call_ai_structure_chunked(dmc_content)
+    return _call_ai_structure_single(dmc_content)
+
+
+def _call_ai_structure_single(dmc_content: str) -> dict:
+    """The proven path for documents short enough to extract reliably in
+    one pass — see call_ai_structure's module-level threshold.
 
     A long itinerary (15+ days, each with hotel details and bullets) can
     still produce a JSON response too large for a modest max_tokens budget
