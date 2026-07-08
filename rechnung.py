@@ -437,7 +437,11 @@ def _parse_conf_with_ai(text: str) -> dict:
     # Strip markdown fences if present
     raw = re.sub(r"^```[a-z]*\n?", "", raw)
     raw = re.sub(r"\n?```$", "", raw)
-    return json.loads(raw)
+    # strict=False tolerates a raw control character (e.g. a literal newline)
+    # inside a string value instead of the escaped \n — the AI occasionally
+    # copies a multi-line note verbatim like that, which strict JSON parsing
+    # otherwise rejects even though the structure itself is valid.
+    return json.loads(raw, strict=False)
 
 
 def parse_rechnung_with_ai(text: str, require_hotels: bool = True) -> dict:

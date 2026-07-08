@@ -1166,9 +1166,14 @@ def call_ai_structure(dmc_content: str) -> dict:
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
         try:
-            return json.loads(raw)
+            # strict=False tolerates a raw control character (e.g. a literal
+            # newline) inside a string value instead of the escaped \n —
+            # Gemini occasionally copies a multi-line DMC note verbatim like
+            # that, which strict JSON parsing rejects outright even though
+            # the structure is otherwise perfectly valid.
+            return json.loads(raw, strict=False)
         except json.JSONDecodeError:
-            result = json.loads(_repair_truncated_json(raw))
+            result = json.loads(_repair_truncated_json(raw), strict=False)
             if not result.get("_truncated"):
                 return result
             print(
@@ -1426,9 +1431,9 @@ def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dic
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
         try:
-            parsed = json.loads(raw)
+            parsed = json.loads(raw, strict=False)
         except json.JSONDecodeError:
-            parsed = json.loads(_repair_truncated_json(raw))
+            parsed = json.loads(_repair_truncated_json(raw), strict=False)
 
         if exact_matches:
             parsed["body_paragraphs"] = _substitute_sight_placeholders(
@@ -1528,10 +1533,10 @@ def call_ai(dmc_content: str, day_text: str = "") -> dict:
     raw = re.sub(r"\s*```$", "", raw)
     # If output was truncated mid-JSON, attempt recovery by closing open structures
     try:
-        return json.loads(raw)
+        return json.loads(raw, strict=False)
     except json.JSONDecodeError:
         repaired = _repair_truncated_json(raw)
-        result = json.loads(repaired)
+        result = json.loads(repaired, strict=False)
         result["_truncated"] = True
         return result
 
@@ -1581,7 +1586,7 @@ def _repair_truncated_json(raw: str) -> str:
         open_strings = truncated.count('"') - truncated.count('\\"')
         if open_strings % 2 == 1:
             truncated += '"'
-        result = json.loads(truncated + closing)
+        result = json.loads(truncated + closing, strict=False)
         result["_truncated"] = True
         return json.dumps(result)
     return raw
