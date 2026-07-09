@@ -1376,7 +1376,7 @@ GENERAL LANGUAGE RULES
 - German quotation marks „so" not "so".
 - No Anglicisms unless standard in German travel language (Check-in, Transfer are fine).
 - No meal mentions in body paragraphs.
-- Always call the guide "Guide" — never "Reiseleiter", "Reiseleiterin", "Reiseleitung", or "Reiseführer", even for a local guide ("lokaler Guide", not "lokaler Reiseleiter"). E.g. "Ihr Guide erwartet Sie", "Treffen Sie Ihren Guide", "mit Ihrem deutschsprachigen Guide" — never "Ihre Reiseleitung"/"Ihren Reiseleiter".
+- Always call the guide "Guide" — never "Reiseleiter", "Reiseleiterin", "Reiseleitung", "Reiseführer", "Reiseexperte"/"Reiseexpertin" (the DMC source's English "travel expert" translates to "Guide", not "Reiseexperte"), even for a local guide ("lokaler Guide", not "lokaler Reiseleiter"/"lokaler Reiseexperte"). E.g. "Ihr Guide erwartet Sie", "Treffen Sie Ihren Guide", "mit Ihrem deutschsprachigen Guide" — never "Ihre Reiseleitung"/"Ihren Reiseleiter"/"Ihren Reiseexperten".
 - Logistics (transfers, trains) stay short and factual: "Treffen Sie Ihren Fahrer für den privaten Transfer zum Bahnhof (ca. 50 Minuten)."
 - If the DMC source gives a specific time or time range for an activity (e.g. "Time: 08:30 - 13:00", "10:00 Meet your guide"), include it in the sentence — "Von 08:30 bis 13:00 Uhr...", "Um 10:00 Uhr treffen Sie...". Don't invent a time that isn't in the source, but never drop one that is.
 """
@@ -1998,28 +1998,33 @@ def _normalize_guide_terminology(text: str) -> str:
         """Preserves sentence-initial capitalization of the matched article."""
         return replacement[0].upper() + replacement[1:] if article[0].isupper() else replacement
 
+    # Reiseexperte/Reiseexpertin: the DMC source's English "travel expert"
+    # sometimes gets translated to this instead of "Guide" — same fix, same
+    # patterns, different noun stem.
+    noun = r"(?:Reiseleit(?:er(?:in)?|ung)|Reiseexpert(?:e|in))\w*"
+
     # Dative, after a preposition: "mit/von/bei Ihrer/Ihrem ... Reiseleitung/Reiseleiter"
     text = re.sub(
-        rf"\b(mit|von|bei)\s+Ihre[rm]\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?Reiseleit(?:er(?:in)?|ung)\w*\b",
+        rf"\b(mit|von|bei)\s+Ihre[rm]\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?{noun}\b",
         lambda m: f"{m.group(1)} Ihrem {_adj(m.group(2), 'en')}Guide",
         text, flags=re.IGNORECASE,
     )
     # Nominative subject: "Ihre/Ihr ... Reiseleitung/Reiseleiter" followed by a 3rd-person verb
     text = re.sub(
-        rf"\bIhre?\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?Reiseleit(?:er(?:in)?|ung)\w*"
+        rf"\bIhre?\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?{noun}"
         rf"(?=\s+(?:erwartet|empfängt|begleitet|bringt|wird|holt|führt))",
         lambda m: f"Ihr {_adj(m.group(1), 'er')}Guide",
         text, flags=re.IGNORECASE,
     )
     # Accusative object (everything else with a possessive): "Treffen Sie Ihre/Ihren ... Reiseleitung/Reiseleiter"
     text = re.sub(
-        rf"\bIhre[n]?\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?Reiseleit(?:er(?:in)?|ung)\w*\b",
+        rf"\bIhre[n]?\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?{noun}\b",
         lambda m: f"Ihren {_adj(m.group(1), 'en')}Guide",
         text, flags=re.IGNORECASE,
     )
     # Bare definite/indefinite article: "der/die/ein/eine Reiseleiter/Reiseleitung"
     text = re.sub(
-        rf"\b(der|die|ein|eine)\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?Reiseleit(?:er(?:in)?|ung)\w*\b",
+        rf"\b(der|die|ein|eine)\s+({_GUIDE_ADJ}\s+)?(?:lokale[nr]\s+)?{noun}\b",
         lambda m: _cap_like(m.group(1), f"der {_adj(m.group(2), 'e')}Guide"),
         text, flags=re.IGNORECASE,
     )
@@ -2027,6 +2032,7 @@ def _normalize_guide_terminology(text: str) -> str:
     text = re.sub(r"\bReiseleiter(?:in)?\b", "Guide", text)
     text = re.sub(r"\bReiseleitung\w*\b", "Guide", text)
     text = re.sub(r"\bReiseführer\b", "Guide", text)
+    text = re.sub(r"\bReiseexpert(?:e|in)\w*\b", "Guide", text)
     return re.sub(r"\s{2,}", " ", text)
 
 

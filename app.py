@@ -373,6 +373,8 @@ async def parse_calendar_info(
     text = await _extract_rechnung_text(file, pasted_text)
     try:
         data = parse_rechnung_with_ai(text, require_hotels=False)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     except Exception as e:
         raise HTTPException(500, f"Dokument konnte nicht verarbeitet werden: {e}")
     return JSONResponse(data)

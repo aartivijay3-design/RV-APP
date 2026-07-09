@@ -398,6 +398,7 @@ Return ONLY a valid JSON object with exactly these fields:
 }
 
 Rules:
+- If the given text does NOT look like a real BAWA travel/booking document — e.g. it's empty, unrelated content, or too garbled/incomplete to reliably identify a client name and destination — return EXACTLY {"error": "insufficient_data"} and nothing else. Do NOT invent a placeholder client name (e.g. "Mustermann"/"Max Mustermann") or guess a destination when you cannot genuinely determine one from the text — a wrong calendar entry is worse than a clear failure.
 - meal_plan_en must be one of: breakfast, halfboard, fullboard, room only
 - Derive check_in/check_out from the travel_start date + cumulative nights
 - If dates are missing, use 01.01.2026 as travel_start and count forward
@@ -444,6 +445,25 @@ def _parse_conf_with_ai(text: str) -> dict:
     return json.loads(raw, strict=False)
 
 
+
+# A model that can't reliably read the document sometimes invents a
+# plausible-looking result instead of admitting it — the standard German
+# placeholder name ("Max Mustermann", used on ID card templates and forms)
+# is a dead giveaway this happened despite the prompt's explicit
+# instruction not to. Checked as a belt-and-suspenders safety net in
+# addition to the {"error": "insufficient_data"} escape hatch, since
+# prompt compliance isn't 100% guaranteed.
+_PLACEHOLDER_NAME_PATTERNS = ("mustermann", "musterfrau", "john doe", "jane doe", "max mustermann")
+
+
+def _looks_like_placeholder(client_names) -> bool:
+    return any(
+        p in (name or "").lower()
+        for name in (client_names or [])
+        for p in _PLACEHOLDER_NAME_PATTERNS
+    )
+
+
 def parse_rechnung_with_ai(text: str, require_hotels: bool = True) -> dict:
     """
     Parse a BAWA Reiseverlauf / Leistungsübersicht / Confirmation document.
@@ -458,9 +478,17 @@ def parse_rechnung_with_ai(text: str, require_hotels: bool = True) -> dict:
     parsed.setdefault("flights", [])
 
     # Always run the AI to get inclusions, flights, checkout notes, and
-    # accurate metadata. Regex result is kept as fallback if AI fails.
+    # accurate metadata. Regex result is kept as fallback if AI fails —
+    # including when the AI "succeeds" but the result looks fabricated
+    # (see _looks_like_placeholder), which used to slip through here and
+    # produce a wrong calendar entry ("Mustermann - Japan") instead of a
+    # clear error when the source document couldn't actually be read.
     try:
         ai_parsed = _parse_conf_with_ai(text)
+        if ai_parsed.get("error"):
+            raise ValueError("AI reported insufficient data in the source document")
+        if _looks_like_placeholder(ai_parsed.get("client_names")):
+            raise ValueError("AI returned a placeholder name — likely hallucinated from unreadable input")
         if ai_parsed.get("hotels") or ai_parsed.get("flights"):
             # Merge: fill any AI gaps from regex
             for key in ("client_names", "destination_en", "destination_de",
@@ -478,14 +506,13 @@ def parse_rechnung_with_ai(text: str, require_hotels: bool = True) -> dict:
 
     if require_hotels and not hotels:
         raise ValueError(
-            "Keine Hotels gefunden. Bitte stellen Sie sicher, dass der Text "
-            "eine Hotel-Tabelle (Rechnung) oder Übernachtungs-Bullets "
-            "(Reiseverlauf Leistungsübersicht) enthält."
+            "Konnte die Rechnung nicht lesen. Bitte fügen Sie den Text der letzten Seite des "
+            "Reiseverlaufs (Leistungsübersicht) ein oder laden Sie eine Confirmation hoch."
         )
     if not require_hotels and not hotels and not parsed["flights"]:
         raise ValueError(
-            "Keine Hotels oder Flüge gefunden. Bitte stellen Sie sicher, dass "
-            "der Text Hotel- oder Flugdaten enthält."
+            "Konnte die Rechnung nicht lesen. Bitte fügen Sie den Text der letzten Seite des "
+            "Reiseverlaufs (Leistungsübersicht) ein oder laden Sie eine Confirmation hoch."
         )
     return parsed
 
