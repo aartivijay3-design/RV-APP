@@ -201,7 +201,12 @@ def extract_dmc_content(file_bytes: bytes, filename: str) -> str:
             print(f"MarkItDown failed for {filename} ({e}), using legacy reader")
 
     if ext in (".docx",):
-        return _legacy_read_word(file_bytes)
+        # No truncation — call_ai_structure/call_ai handle their own size
+        # caps and chunking for long documents. This mirrors the fix in
+        # rechnung.py, which already passes max_chars=None for the same
+        # reason; this call site (used for DMC-offer uploads) was missed
+        # and was silently cutting long itineraries off at 8500 chars.
+        return _legacy_read_word(file_bytes, max_chars=None)
     elif ext == ".pdf":
         return _legacy_read_pdf(file_bytes)
     else:

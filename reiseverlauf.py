@@ -1503,22 +1503,32 @@ def _slice_activities_by_markers(days: list, dmc_content: str) -> list:
         if pos != -1:
             search_from = pos + 1
 
+    # A run of 3+ consecutive days can share the same marker (e.g. a
+    # 4-night "all days free at leisure" block expanded to one entry per
+    # calendar day). Comparing only to the immediately preceding day would
+    # keep the real text on the first day of the run and blank out every
+    # other day in it — give the whole run the same sliced text instead.
     unresolved = []
-    for i, day in enumerate(days):
+    i = 0
+    while i < n:
         start = positions[i]
         if start == -1:
-            day["activities_raw"] = ""
-            unresolved.append(day.get("day_number"))
+            days[i]["activities_raw"] = ""
+            unresolved.append(days[i].get("day_number"))
+            i += 1
             continue
-        if i > 0 and positions[i - 1] == start:
-            day["activities_raw"] = ""
-            continue
+        run_end = i
+        while run_end + 1 < n and positions[run_end + 1] == start:
+            run_end += 1
         end = len(dmc_content)
-        for j in range(i + 1, n):
+        for j in range(run_end + 1, n):
             if positions[j] != -1 and positions[j] > start:
                 end = positions[j]
                 break
-        day["activities_raw"] = dmc_content[start:end].strip()[:4000]
+        text = dmc_content[start:end].strip()[:4000]
+        for k in range(i, run_end + 1):
+            days[k]["activities_raw"] = text
+        i = run_end + 1
 
     return unresolved
 
@@ -2036,6 +2046,24 @@ def _normalize_guide_terminology(text: str) -> str:
     return re.sub(r"\s{2,}", " ", text)
 
 
+_OPTIONAL_EXCURSION_RE = re.compile(r"(?im)^\s*option\s*:\s*(.+)$")
+
+
+def _extract_optional_excursion(activities_raw: str) -> str:
+    """Pulls an explicitly-named optional/priced-separately excursion out of
+    a free day's source text (e.g. "Option: Half Day Snorkeling..."). Plain
+    regex, not an AI call — free days must never get AI-invented sightseeing
+    suggestions, but naming an excursion the DMC source itself already
+    offers isn't invention, so it's safe to surface deterministically."""
+    m = _OPTIONAL_EXCURSION_RE.search(activities_raw or "")
+    if not m:
+        return ""
+    title = m.group(1).strip()
+    # Drop a trailing parenthetical (pricing/inclusion notes) — the price
+    # card covers cost details separately, keep this to just the name.
+    return re.sub(r"\s*\([^)]*\)\s*$", "", title).strip()
+
+
 def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dict:
     """Generate prose for a single day. Returns {body_paragraphs, hotel_description}."""
     # Free days get the standard fixed line only — no AI call, no invented
@@ -2045,7 +2073,11 @@ def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dic
     if day.get("is_free_day") and not day_text_override.strip():
         location = day.get("location_heading", "").strip()
         line = f"Genießen Sie die freie Zeit in {location}." if location else "Genießen Sie die freie Zeit."
-        return {"body_paragraphs": [line], "hotel_description": ""}
+        paragraphs = [line]
+        option_title = _extract_optional_excursion(day.get("activities_raw", ""))
+        if option_title:
+            paragraphs.append(f"Optional (gegen Aufpreis) buchbar: {option_title}.")
+        return {"body_paragraphs": paragraphs, "hotel_description": ""}
 
     activities = day_text_override.strip() or day.get("activities_raw", "")
     # day["hotel"] is explicitly None (not just missing) for hotel-less days
