@@ -28020,6 +28020,14 @@
       "language": "de",
       "text": "Beim Abflug sorgt der Silk Route Service am Flughafen Colombo für einen besonders entspannten und geordneten Ablauf. Sie werden beim Check-in unterstützt, durch die Sicherheits- und Passkontrollen begleitet und können die Wartezeit in einer Lounge angenehmer verbringen. Dadurch entfällt viel Hektik am Flughafen, und Ihr Abflug fühlt sich deutlich komfortabler, schneller und persönlicher an als bei einem regulären Ablauf.",
       "location_heading": "Dep. Silk Route Service"
+    },
+    {
+      "type": "hotel",
+      "destination": "Saariselkä, Finnland",
+      "source_file": "Manuell hinzugefügt (Datenbank-Tab)",
+      "language": "de",
+      "text": "Das Wilderness Hotel Saariselkä liegt inmitten der unberührten Natur Lapplands, etwa 15 Kilometer vom Flughafen Ivalo entfernt. Es bietet eine authentische und komfortable Basis für Abenteuer in der Wildnis. Die 120 Zimmer und Suiten sind im traditionellen lappländischen Stil eingerichtet und bieten moderne Annehmlichkeiten. Das Hotel ist bekannt für seine hervorragende Lage zur Beobachtung der Nordlichter und bietet direkten Zugang zu zahlreichen Winteraktivitäten wie Schneemobilfahrten und Husky-Safaris. Es ist der ideale Ausgangspunkt, um die arktische Landschaft zu erkunden und die Magie des hohen Nordens hautnah zu erleben.",
+      "hotel_name": "Wilderness Hotel Saariselkä"
     }
   ]
 }
