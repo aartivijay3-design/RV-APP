@@ -13,6 +13,12 @@ ai_client = OpenAI(
     # surfaces only as a generic, misleading "Connection error."
     api_key=os.environ["GEMINI_API_KEY"].strip(),
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    # Without an explicit timeout, a stalled Gemini call (rate limit, network
+    # hiccup) can hang for the SDK's default of several minutes — long enough
+    # that a user re-analysing a document sees the button stuck on
+    # "Analysiert…" with no way to tell a slow response from a dead one.
+    # Structure/day-prose completions normally finish in well under this.
+    timeout=90.0,
 )
 AI_MODEL = "gemini-2.5-flash"
 

@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import time
 import zipfile
 import io
 from pathlib import Path
@@ -1127,57 +1128,73 @@ def _chunk_text(text: str, chunk_size: int = 9000, overlap: int = 2000) -> list:
 
 
 def _run_chunk_days(chunk_text: str) -> list:
-    """Extracts whatever complete days are visible in one chunk. Errors are
-    swallowed (returns []) rather than raised — one bad chunk shouldn't
-    abort the whole document when adjacent overlapping chunks likely cover
-    the same days anyway."""
-    try:
-        response = _ai_complete(
-            model=AI_MODEL,
-            temperature=0.1,
-            max_tokens=16000,
-            messages=[
-                {"role": "system", "content": STRUCTURE_CHUNK_PROMPT},
-                {"role": "user",   "content": chunk_text},
-            ],
-        )
-        raw = response.choices[0].message.content.strip()
-        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-        raw = re.sub(r"\s*```$", "", raw)
+    """Extracts whatever complete days are visible in one chunk. A single
+    attempt failing (rate limit, transient network error, malformed JSON)
+    used to silently drop that chunk's days entirely with no retry — for a
+    document whose chunks aren't fully redundant (a day long enough to
+    straddle the overlap window), that meant real days vanishing from the
+    final result with nothing to catch it. One quick retry after a bad
+    attempt fixes the transient case; only a second consecutive failure
+    gives up and skips the chunk (adjacent overlapping chunks likely cover
+    the same days anyway)."""
+    for attempt in range(2):
         try:
-            parsed = json.loads(raw, strict=False)
-        except json.JSONDecodeError:
-            parsed = json.loads(_repair_truncated_json(raw), strict=False)
-        return parsed.get("days", [])
-    except Exception as e:
-        print(f"[structure-chunk] WARNING — a chunk failed, skipping it: {e}", flush=True)
-        return []
+            response = _ai_complete(
+                model=AI_MODEL,
+                temperature=0.1,
+                max_tokens=16000,
+                messages=[
+                    {"role": "system", "content": STRUCTURE_CHUNK_PROMPT},
+                    {"role": "user",   "content": chunk_text},
+                ],
+            )
+            raw = response.choices[0].message.content.strip()
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+            try:
+                parsed = json.loads(raw, strict=False)
+            except json.JSONDecodeError:
+                parsed = json.loads(_repair_truncated_json(raw), strict=False)
+            return parsed.get("days", [])
+        except Exception as e:
+            if attempt == 0:
+                print(f"[structure-chunk] WARNING — a chunk failed, retrying once: {e}", flush=True)
+                time.sleep(2)
+            else:
+                print(f"[structure-chunk] WARNING — chunk failed twice, skipping it: {e}", flush=True)
+                return []
 
 
 def _run_metadata(dmc_content: str) -> dict:
     """Trip-level fields only (client_name, destination, pax, leistungen) —
     a small, cheap, reliable call over the full document regardless of
-    length, since its output never scales with the number of days."""
-    try:
-        response = _ai_complete(
-            model=AI_MODEL,
-            temperature=0.1,
-            max_tokens=4000,
-            messages=[
-                {"role": "system", "content": STRUCTURE_METADATA_PROMPT},
-                {"role": "user",   "content": dmc_content},
-            ],
-        )
-        raw = response.choices[0].message.content.strip()
-        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-        raw = re.sub(r"\s*```$", "", raw)
+    length, since its output never scales with the number of days. One
+    retry on transient failure, same reasoning as _run_chunk_days."""
+    for attempt in range(2):
         try:
-            return json.loads(raw, strict=False)
-        except json.JSONDecodeError:
-            return json.loads(_repair_truncated_json(raw), strict=False)
-    except Exception as e:
-        print(f"[structure-metadata] WARNING — metadata extraction failed: {e}", flush=True)
-        return {}
+            response = _ai_complete(
+                model=AI_MODEL,
+                temperature=0.1,
+                max_tokens=4000,
+                messages=[
+                    {"role": "system", "content": STRUCTURE_METADATA_PROMPT},
+                    {"role": "user",   "content": dmc_content},
+                ],
+            )
+            raw = response.choices[0].message.content.strip()
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+            try:
+                return json.loads(raw, strict=False)
+            except json.JSONDecodeError:
+                return json.loads(_repair_truncated_json(raw), strict=False)
+        except Exception as e:
+            if attempt == 0:
+                print(f"[structure-metadata] WARNING — metadata failed, retrying once: {e}", flush=True)
+                time.sleep(2)
+            else:
+                print(f"[structure-metadata] WARNING — metadata extraction failed twice: {e}", flush=True)
+                return {}
 
 
 def _merge_chunk_days(all_days: list) -> list:
@@ -1236,49 +1253,63 @@ def _call_ai_structure_chunked(dmc_content: str) -> dict:
     if len(dmc_content) > 100000:
         dmc_content = dmc_content[:100000] + "\n[...truncated...]"
 
-    metadata = _run_metadata(dmc_content)
     chunks = _chunk_text(dmc_content)
     print(f"[structure-chunk] document is {len(dmc_content)} chars — split into {len(chunks)} chunks", flush=True)
 
-    all_days = []
-    for chunk in chunks:
-        all_days.extend(_run_chunk_days(chunk))
+    def _attempt():
+        metadata = _run_metadata(dmc_content)
+        all_days = []
+        for chunk in chunks:
+            all_days.extend(_run_chunk_days(chunk))
 
-    merged_days = _merge_chunk_days(all_days)
-    unresolved = _slice_activities_by_markers(merged_days, dmc_content)
+        merged_days = _merge_chunk_days(all_days)
+        unresolved = _slice_activities_by_markers(merged_days, dmc_content)
 
-    result = {
-        "client_name": metadata.get("client_name", "Familie"),
-        "destination": metadata.get("destination", ""),
-        "pax": metadata.get("pax"),
-        "days": merged_days,
-        "leistungen": metadata.get("leistungen", {}),
-    }
+        result = {
+            "client_name": metadata.get("client_name", "Familie"),
+            "destination": metadata.get("destination", ""),
+            "pax": metadata.get("pax"),
+            "days": merged_days,
+            "leistungen": metadata.get("leistungen", {}),
+        }
 
-    if merged_days:
-        first, last = merged_days[0], merged_days[-1]
-        result["start_date"] = first.get("date", "")
-        result["end_date"] = last.get("date", "")
-        try:
-            start_dt = datetime.strptime(first["date"], "%d.%m.%Y")
-            end_dt = datetime.strptime(last["date"], "%d.%m.%Y")
-            result["start_date_formatted"] = f"{start_dt.day:02d}. {_DE_MONTHS_LONG[start_dt.month]}"
-            result["end_date_formatted"] = f"{end_dt.day:02d}. {_DE_MONTHS_LONG[end_dt.month]} {end_dt.year}"
-            nights = (end_dt - start_dt).days
-            result["duration_label"] = f"{nights + 1} Tage / {nights} Übernachtungen"
-            result["leistungen"].setdefault(
-                "reisedatum",
-                f"{result['start_date_formatted']} bis {result['end_date_formatted']}",
-            )
-            result["leistungen"].setdefault("reisedauer", result["duration_label"])
-            for d in merged_days:
-                if not d.get("weekday"):
-                    dt = datetime.strptime(d["date"], "%d.%m.%Y")
-                    d["weekday"] = _DE_WEEKDAYS[dt.weekday()]
-        except Exception:
-            pass
+        if merged_days:
+            first, last = merged_days[0], merged_days[-1]
+            result["start_date"] = first.get("date", "")
+            result["end_date"] = last.get("date", "")
+            try:
+                start_dt = datetime.strptime(first["date"], "%d.%m.%Y")
+                end_dt = datetime.strptime(last["date"], "%d.%m.%Y")
+                result["start_date_formatted"] = f"{start_dt.day:02d}. {_DE_MONTHS_LONG[start_dt.month]}"
+                result["end_date_formatted"] = f"{end_dt.day:02d}. {_DE_MONTHS_LONG[end_dt.month]} {end_dt.year}"
+                nights = (end_dt - start_dt).days
+                result["duration_label"] = f"{nights + 1} Tage / {nights} Übernachtungen"
+                result["leistungen"].setdefault(
+                    "reisedatum",
+                    f"{result['start_date_formatted']} bis {result['end_date_formatted']}",
+                )
+                result["leistungen"].setdefault("reisedauer", result["duration_label"])
+                for d in merged_days:
+                    if not d.get("weekday"):
+                        dt = datetime.strptime(d["date"], "%d.%m.%Y")
+                        d["weekday"] = _DE_WEEKDAYS[dt.weekday()]
+            except Exception:
+                pass
 
-    v = _validate_structure(result, dmc_content, unresolved)
+        return result, _validate_structure(result, dmc_content, unresolved)
+
+    result, v = _attempt()
+
+    # Unlike the single-pass path, chunked extraction had no retry at all —
+    # a day silently dropped by one bad chunk (see _run_chunk_days) stayed
+    # dropped. One full re-run, keeping whichever attempt scores better,
+    # closes that gap the same way the single-pass path already handles it.
+    if v["missing"] or v["unresolved"] or v["bad_hotels"]:
+        print(f"[structure-chunk] WARNING — issues after merge: {v} — retrying once", flush=True)
+        retry_result, retry_v = _attempt()
+        if _issue_score(retry_v) < _issue_score(v):
+            result, v = retry_result, retry_v
+
     if v["missing"]:
         result["_day_count_mismatch"] = {"expected": v["expected"], "actual": v["actual"]}
     if v["unresolved"]:
@@ -1286,8 +1317,9 @@ def _call_ai_structure_chunked(dmc_content: str) -> dict:
     if v["bad_hotels"]:
         result["_hallucinated_hotel_days"] = v["bad_hotels"]
     if v["missing"] or v["unresolved"] or v["bad_hotels"]:
-        print(f"[structure-chunk] WARNING — issues remain after chunked merge: {v}", flush=True)
+        print(f"[structure-chunk] WARNING — issues remain after retry: {v}", flush=True)
 
+    _backfill_missing_hotels(result.get("days", []))
     result["days"] = _merge_undifferentiated_days(result.get("days", []))
     return result
 
@@ -1559,6 +1591,37 @@ def _slice_activities_by_markers(days: list, dmc_content: str) -> list:
         i = run_end + 1
 
     return unresolved
+
+
+def _strip_location_suffix(location: str) -> str:
+    return re.sub(r"\s*/\s*(Ankunft|Abreise)\s*$", "", location or "", flags=re.IGNORECASE).strip().lower()
+
+
+def _backfill_missing_hotels(days: list) -> None:
+    """Carries the previous day's hotel forward onto a day whose hotel is
+    missing, when both days are at the same place. The per-day hotel field
+    and leistungen.hotel_nights (a separate, cheap, trip-level call) are
+    extracted independently — a document can come back with the right
+    hotel in the services summary while a specific day's own hotel field
+    is empty, silently dropping that day's "Übernachtung im X" line even
+    though the itinerary elsewhere shows the stay was correctly identified.
+
+    Deliberately conservative: only fires when the (suffix-stripped)
+    location_heading exactly matches the last day that had a real hotel —
+    guessing across an actual city change would silently attach the wrong
+    hotel, which is worse than a visibly missing one.
+    """
+    last_hotel = None
+    last_location = None
+    for day in days:
+        hotel = day.get("hotel")
+        name = (hotel.get("name") or "").strip() if isinstance(hotel, dict) else ""
+        location = _strip_location_suffix(day.get("location_heading", ""))
+        if name:
+            last_hotel = hotel
+            last_location = location
+        elif last_hotel and location and location == last_location:
+            day["hotel"] = {**last_hotel, "is_first_night": False, "description": ""}
 
 
 def _merge_undifferentiated_days(days: list) -> list:
@@ -1882,6 +1945,7 @@ def _call_ai_structure_single(dmc_content: str) -> dict:
         if v["missing"] or v["unresolved"] or v["bad_hotels"] or stalled or v["low_coverage"]:
             print(f"[structure] WARNING — issues remain after retry: {v}", flush=True)
 
+    _backfill_missing_hotels(result.get("days", []))
     result["days"] = _merge_undifferentiated_days(result.get("days", []))
     return result
 
