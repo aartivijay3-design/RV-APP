@@ -282,18 +282,33 @@ def build_reiseubersicht_table(days: list, photo_rids: list = None) -> str:
             hotel_name = hotel.get("name", "")
             bullets    = day.get("overview_bullets", [])
             day_num    = day.get("day_number", global_i + 1)
+            day_num_end = day.get("day_number_end")
 
-            col1 = (
-                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
-                f'<w:r><w:rPr>{rpr(bold=True)}</w:rPr>'
-                f'<w:t xml:space="preserve">Tag {x(str(day_num))}</w:t></w:r></w:p>'
-                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
-                f'<w:r><w:rPr>{rpr()}</w:rPr>'
-                f'<w:t>{x(weekday)}</w:t></w:r></w:p>'
-                f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
-                f'<w:r><w:rPr>{rpr()}</w:rPr>'
-                f'<w:t>{x(date_str)}</w:t></w:r></w:p>'
-            )
+            if day_num_end:
+                # A merged multi-day block (see _merge_undifferentiated_days)
+                # — show the day/date range instead of a single weekday.
+                day_label  = f"Tag {day_num}–{day_num_end}"
+                date_label = f"{date_str} – {day.get('date_end', '')}"
+                col1 = (
+                    f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                    f'<w:r><w:rPr>{rpr(bold=True)}</w:rPr>'
+                    f'<w:t xml:space="preserve">{x(day_label)}</w:t></w:r></w:p>'
+                    f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                    f'<w:r><w:rPr>{rpr()}</w:rPr>'
+                    f'<w:t>{x(date_label)}</w:t></w:r></w:p>'
+                )
+            else:
+                col1 = (
+                    f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                    f'<w:r><w:rPr>{rpr(bold=True)}</w:rPr>'
+                    f'<w:t xml:space="preserve">Tag {x(str(day_num))}</w:t></w:r></w:p>'
+                    f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                    f'<w:r><w:rPr>{rpr()}</w:rPr>'
+                    f'<w:t>{x(weekday)}</w:t></w:r></w:p>'
+                    f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+                    f'<w:r><w:rPr>{rpr()}</w:rPr>'
+                    f'<w:t>{x(date_str)}</w:t></w:r></w:p>'
+                )
 
             col2 = (
                 f'<w:p><w:pPr><w:spacing w:after="40"/></w:pPr>'
@@ -479,7 +494,11 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
     parts = []
 
     # Cover page
-    client_display = itinerary.get("client_name", "Familie")
+    # .get(key, default) only falls back when the key is MISSING — the AI can
+    # legitimately return client_name: "" (no client named in the source
+    # document), which must still show a generic placeholder, not a blank
+    # cover page.
+    client_display = itinerary.get("client_name") or "Familie"
     date_line = f"{itinerary.get('start_date_formatted', '')} – {itinerary.get('end_date_formatted', '')}"
     destination = itinerary.get("destination", "Destination")
     subtitle = itinerary.get("cover_subtitle", "Eine Reise voller Eindrücke")
@@ -550,8 +569,14 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
             di += 1
             continue
 
-        # Normal day
-        parts.append(day_heading(f"{day['weekday']}, {day['date']}"))
+        # Normal day — or a merged multi-day block (see
+        # _merge_undifferentiated_days): show the day/date range instead of
+        # a single weekday, since the block spans several calendar days.
+        if day.get("day_number_end"):
+            heading = f"Tag {day['day_number']}–{day['day_number_end']} · {day['date']} – {day.get('date_end', '')}"
+        else:
+            heading = f"{day['weekday']}, {day['date']}"
+        parts.append(day_heading(heading))
         parts.append(loc_heading(day.get("location_heading", "")))
         parts.append(ep())
 
@@ -1012,6 +1037,7 @@ Rules:
 - is_free_day: true if the DMC gives no specific activity for the day (free/leisure/own arrangements). When true, set overview_bullets: ["Freizeit"]. The prose generator will insert the standard free-day line — do NOT write activities.
 - hotel_nights: one entry per hotel (not per day), with correct total nights count.
 - client_name: ALWAYS in German format "Familie [Nachname]" (e.g. Familie Schiff, Familie Grundler). Extract the family name and prefix with "Familie". Never use English ("The X family" or "X Family"). If group name, keep it as-is but in German.
+- client_name, pax, and leistungen.reiseteilnehmer must come from an ACTUAL name/party-size stated somewhere in THIS document (a cover sheet, "prepared for", a pax count). Many DMC documents (generic activity templates, rate sheets meant for repeat use) name no client at all — in that case return client_name: "", pax: null, and OMIT leistungen.reiseteilnehmer entirely. Never fall back to the example above ("Familie Grundler") or invent any other name/count — the real client name is supplied separately by the person generating this document, and a wrong name on the cover page is worse than a blank one.
 """
 
 
@@ -1044,6 +1070,7 @@ Rules:
 - destination: the country/region in German, e.g. "Japan", "Vietnam und Singapur".
 - hotel_nights: one entry per hotel (not per day), with the correct total night count and exact room type.
 - special_experiences: only genuinely distinctive/bookable experiences explicitly named in the offer, not generic sightseeing.
+- client_name, pax, and leistungen.reiseteilnehmer must come from an ACTUAL name/party-size stated somewhere in THIS document. Many DMC documents (generic activity templates, rate sheets meant for repeat use) name no client at all — in that case return client_name: "", pax: null, and OMIT leistungen.reiseteilnehmer entirely. Never fall back to the example above ("Familie Grundler") or invent any other name/count — the real client name is supplied separately by the person generating this document, and a wrong name on the cover page is worse than a blank one.
 """
 
 STRUCTURE_CHUNK_PROMPT = """You are given ONE EXCERPT from a longer multi-day DMC (destination management company) travel offer — not the whole document. This excerpt may begin or end mid-day; overlap with adjacent excerpts covering the same document is expected and fine.
@@ -1261,6 +1288,7 @@ def _call_ai_structure_chunked(dmc_content: str) -> dict:
     if v["missing"] or v["unresolved"] or v["bad_hotels"]:
         print(f"[structure-chunk] WARNING — issues remain after chunked merge: {v}", flush=True)
 
+    result["days"] = _merge_undifferentiated_days(result.get("days", []))
     return result
 
 
@@ -1533,6 +1561,56 @@ def _slice_activities_by_markers(days: list, dmc_content: str) -> list:
     return unresolved
 
 
+def _merge_undifferentiated_days(days: list) -> list:
+    """Collapses a run of 2+ consecutive non-free days sharing byte-identical
+    activities_raw into a single entry spanning the whole range, instead of
+    repeating the same content under several near-identical day headings.
+
+    This happens when the DMC source describes a stretch of days as one
+    undifferentiated block with no day-by-day breakdown at all — e.g. a
+    "choose your own activities" week with a menu of options but no fixed
+    schedule ("you'll receive the activity order upon arrival"). Each
+    calendar day still gets its own day_marker pointing at the same block
+    (correct — every day of the block really is covered by that text), but
+    showing the identical content 6 times in a row reads as broken rather
+    than as the deliberate, unavoidable ambiguity it actually is.
+
+    Free days (is_free_day) are untouched — those already get their own
+    consecutive-run merge at document-build time (see build_body_xml),
+    which intentionally keeps every date visible even though the text is
+    just the fixed "free time" line.
+    """
+    merged = []
+    i, n = 0, len(days)
+    while i < n:
+        day = days[i]
+        raw = (day.get("activities_raw") or "").strip()
+        run_end = i
+        if raw and not day.get("is_free_day"):
+            while (
+                run_end + 1 < n
+                and not days[run_end + 1].get("is_free_day")
+                and (days[run_end + 1].get("activities_raw") or "").strip() == raw
+            ):
+                run_end += 1
+        if run_end == i:
+            merged.append(day)
+            i += 1
+            continue
+        combined = dict(day)
+        combined["date_end"] = days[run_end].get("date", "")
+        combined["span_days"] = run_end - i + 1
+        merged.append(combined)
+        i = run_end + 1
+
+    for idx, d in enumerate(merged):
+        d["day_number"] = idx + 1
+        if d.get("span_days", 1) > 1:
+            d["day_number_end"] = d["day_number"] + d["span_days"] - 1
+
+    return merged
+
+
 def _validate_structure(result: dict, dmc_content: str, unresolved: list = None) -> dict:
     """Cheap, deterministic checks against the result and the original
     source text — catches problems an AI call can introduce that a single
@@ -1792,11 +1870,19 @@ def _call_ai_structure_single(dmc_content: str) -> dict:
             result["_hollow_days"] = v["unresolved"]
         if v["bad_hotels"]:
             result["_hallucinated_hotel_days"] = v["bad_hotels"]
-        if stalled or v["low_coverage"]:
+
+        # A stalled_run (the same marker repeated for many consecutive days)
+        # is resolved by the merge below — it becomes one legitimate
+        # multi-day entry instead of looking like several wrong ones.
+        # low_coverage is a separate, still-unresolved signal (most of the
+        # document unaccounted for regardless of merging) and still
+        # warrants the warning.
+        if v["low_coverage"]:
             result["_stalled_extraction"] = True
         if v["missing"] or v["unresolved"] or v["bad_hotels"] or stalled or v["low_coverage"]:
             print(f"[structure] WARNING — issues remain after retry: {v}", flush=True)
 
+    result["days"] = _merge_undifferentiated_days(result.get("days", []))
     return result
 
 
@@ -2086,9 +2172,23 @@ def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dic
     hotel = day.get("hotel") or {}
     is_first_night = hotel.get("is_first_night", False)
 
+    day_number_end = day.get("day_number_end")
+    if day_number_end:
+        day_line = (
+            f"Days {day['day_number']}–{day_number_end}: {day['date']} – {day.get('date_end', '')}\n"
+            f"NOTE: this is a MULTI-DAY BLOCK, not a single day — the source document describes "
+            f"this whole date range as one undifferentiated stretch with no fixed day-by-day "
+            f"schedule (e.g. a menu of optional activities guests choose from during their stay). "
+            f"Write it as an overview of what's available across these days — NEVER as a single "
+            f"day's packed schedule (do not use 'am Vormittag/Nachmittag/Abend' framing implying "
+            f"it all happens in one day). Make clear the exact daily order is arranged on-site.\n"
+        )
+    else:
+        day_line = f"Day {day['day_number']}: {day['weekday']}, {day['date']}\n"
+
     user_msg = (
         f"Destination: {destination}\n"
-        f"Day {day['day_number']}: {day['weekday']}, {day['date']}\n"
+        f"{day_line}"
         f"Location: {day['location_heading']}\n"
         f"Activities (English source): {activities}\n"
         f"Hotel: {hotel.get('name', 'none')} — is_first_night: {is_first_night}\n"

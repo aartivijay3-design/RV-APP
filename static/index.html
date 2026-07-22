@@ -1711,10 +1711,10 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
         : '';
       card.innerHTML = `
         <div class="day-card-header" onclick="toggleCard(${i})">
-          <div class="day-num">${day.day_number}</div>
+          <div class="day-num">${day.day_number_end ? `${day.day_number}–${day.day_number_end}` : day.day_number}</div>
           <div class="day-title">
             <div class="day-location">${day.location_heading || ''}</div>
-            <div class="day-date">${day.weekday || ''}, ${day.date || ''}</div>
+            <div class="day-date">${day.day_number_end ? `${day.date || ''} – ${day.date_end || ''}` : `${day.weekday || ''}, ${day.date || ''}`}</div>
           </div>
           <span class="day-status" id="day-status-${i}">Wird generiert…</span>
           <span class="chevron">▲</span>
