@@ -1027,7 +1027,8 @@ STRUCTURE_PROMPT = """Extract the structure from this DMC travel offer. Return O
 }
 
 Rules:
-- THE days ARRAY MUST CONTAIN EXACTLY ONE ENTRY PER CALENDAR DAY OF THE TRIP — from start_date through end_date, no gaps, no merging. This is the single most important rule below. DMC offers often describe a multi-night hotel stay as ONE date-range block instead of listing each night separately — for example "13 Jan – 18 Jan (6 Nights) Phu Quoc Island, Regent Phu Quoc" describes 6 calendar days at ONE hotel with no day-by-day breakdown given. You must still expand that into 6 separate entries in `days` (day_number N through N+5, one per calendar date, same hotel repeated on each, is_first_night true only on the first), not one entry for the whole block. The same applies to a "FREE TIME AT LEISURE" block spanning several nights, or any other stretch with no explicit day-by-day activity list — every one of those nights still gets its own entry, with is_free_day: true and overview_bullets: ["Freizeit"] on the ones with nothing specific listed. Before finishing, count: does the number of entries in `days` equal the number of nights in the trip (or nights + 1 if the departure day also gets its own entry)? If not, you have merged days that must be split apart.
+- THE days ARRAY MUST CONTAIN EXACTLY ONE ENTRY PER CALENDAR DAY OF THE TRIP — from start_date through end_date, no gaps, no merging. This is the single most important rule below. DMC offers often describe a multi-night hotel stay as ONE date-range block instead of listing each night separately — for example "13 Jan – 18 Jan (6 Nights) Phu Quoc Island, Regent Phu Quoc" describes 6 calendar days at ONE hotel with no day-by-day breakdown given, and the same applies to a range written as "Day 13 – Day 19 | Enjoy Golf and pamper yourself with spa treatments" — that has a real (if brief) activity sentence, so it is real narrative content. Expand either kind into one entry per calendar date (day_number N through N+5, same hotel repeated, is_first_night true only on the first), not one entry for the whole block. The same applies to a "FREE TIME AT LEISURE" block spanning several nights, or any other stretch with no explicit day-by-day activity list — every one of those nights still gets its own entry, with is_free_day: true and overview_bullets: ["Freizeit"] on the ones with nothing specific listed. Before finishing, count: does the number of entries in `days` equal the number of nights in the trip (or nights + 1 if the departure day also gets its own entry)? If not, you have merged days that must be split apart.
+- EXCEPTION to the rule above — do not extract a day entry from a table row that is PURELY logistics: just a day number/date, a destination, and a hotel/room/meal-plan, with NO activity sentence anywhere in the row (e.g. "Day 01 | Colombo | Shangri La Colombo | Horizon Club | Bed & Breakfast Basis" and nothing else). Many DMC documents restate their days a second time in a trailing "Accommodation Summary"/"Hotel Summary" table, after the real day-by-day narrative earlier in the document — extracting from both produced a 20-day trip that came out as 39 days, because that table's dateless rows each got a fabricated placeholder date and never matched up with the real days. This exception applies ONLY to that exact bare shape — never to a row with any activity sentence, however brief. When genuinely unsure which of the two this is, prefer expanding it per the rule above (a duplicate merges away harmlessly later; a dropped real day does not). Never invent a date for a day when none can be determined from context.
 - location_heading: the place name ONLY — "Hakone", "Kyoto", "Tokyo / Ankunft", "Kyoto - Kinosaki Onsen". NEVER describe the activity type here ("Ganztägige Tour in Hakone", "Halbtägige Tour in Kyoto") — that belongs in overview_bullets, not the heading. Use "/ Ankunft" or "/ Abreise" only on the actual arrival/departure day, and "CityA - CityB" only on a day that transfers between two places.
 - overview_bullets: 2-5 short German noun phrases per day. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
 - day_marker: a SHORT (8-15 words) EXACT, character-for-character excerpt copied verbatim from the very START of this day's section in the source document — the day's header line if there is one (e.g. "DAY SEVEN - MONDAY, 11 JAN 2027"), or the first distinctive sentence describing that day if there's no explicit header. This is used afterward to programmatically locate the day in the original text and slice out its real content, so precision matters more here than for any other field — copy it EXACTLY as it appears (capitalization, punctuation, spacing), never paraphrase, translate, reformat, or summarize it. Pick a phrase that is UNIQUE within the whole document — never a generic word/phrase that also occurs elsewhere ("Breakfast", "Overnight stay", a bare date that repeats). For a multi-night block with no day-by-day breakdown (see the days-array rule above), every expanded day within that same block shares the IDENTICAL day_marker pointing to where the block begins — do not invent different markers for days that have no distinct text of their own.
@@ -1055,6 +1056,7 @@ Return ONLY valid JSON, no markdown, no explanation:
 {
   "client_name": "Familie Grundler",
   "destination": "Japan",
+  "start_date": "22.06.2026",
   "pax": 4,
   "leistungen": {
     "reiseteilnehmer": "Familie Grundler (4 Personen)",
@@ -1071,6 +1073,7 @@ Rules:
 - destination: the country/region in German, e.g. "Japan", "Vietnam und Singapur".
 - hotel_nights: one entry per hotel (not per day), with the correct total night count and exact room type.
 - special_experiences: only genuinely distinctive/bookable experiences explicitly named in the offer, not generic sightseeing.
+- start_date: the calendar date of Day 1 / arrival, DD.MM.YYYY. Some documents label days only "Day 01", "Day 02"... with no date anywhere near the day-by-day narrative itself — the real date is often only findable elsewhere in the document (a validity/pricing section, "Travelling Date:", a booking confirmation line). Search the WHOLE document for it; this is the one piece of context the day-by-day extraction step (which only sees small excerpts) can't find on its own, so getting it from here matters even when it feels like it belongs to a "pricing" section, not the itinerary. Return "" only if truly no date appears anywhere in the document.
 - client_name, pax, and leistungen.reiseteilnehmer must come from an ACTUAL name/party-size stated somewhere in THIS document. Many DMC documents (generic activity templates, rate sheets meant for repeat use) name no client at all — in that case return client_name: "", pax: null, and OMIT leistungen.reiseteilnehmer entirely. Never fall back to the example above ("Familie Grundler") or invent any other name/count — the real client name is supplied separately by the person generating this document, and a wrong name on the cover page is worse than a blank one.
 """
 
@@ -1096,10 +1099,11 @@ Return ONLY valid JSON, no markdown, no explanation:
 ]}
 
 Rules:
+- EVERY calendar day in what you're given must become one entry — INCLUDING a multi-day range written as one block, e.g. "13 Jan – 18 Jan (6 Nights)" or "Day 13 – Day 19 | Enjoy Golf and pamper yourself with spa treatments": expand that into one entry per night (same hotel repeated, is_first_night true only on the first, is_free_day: true and overview_bullets: ["Freizeit"] only where truly nothing specific is given). This is the default — do this unless the exception below applies.
+- EXCEPTION — do not extract a day entry from a table row that is PURELY logistics: just a day number/date, a destination, and a hotel/room/meal-plan, with NO sentence anywhere describing an activity, e.g. "Day 01 | Colombo | Shangri La Colombo | Horizon Club | Bed & Breakfast Basis" and nothing else. This exception exists ONLY for that exact shape (a bare accommodation-summary/hotel-summary table restating days already narrated earlier in the document) — extracting it too produced a 20-day trip that came out as 39 days. A row like "Day 13 – Day 19 | Enjoy Golf..." has a real activity sentence, so the exception does NOT apply to it — expand it per the rule above. When genuinely unsure which of the two this is, prefer expanding it (a duplicated day merges away harmlessly later; a dropped real day does not).
 - Only include a day whose content is FULLY visible in this excerpt. If a day's description is visibly cut off at the very start or end of what you're given (trails off with no clear beginning/end), do NOT include it — an overlapping adjacent excerpt covers it completely elsewhere. It's fine and expected for a day to also appear in an adjacent excerpt; duplicates get merged and de-duplicated afterward by date.
-- date: the actual calendar date for this day, DD.MM.YYYY — get this right even when unsure of day_number, since date (not day_number) is what's used to merge and order days across excerpts.
+- date: the actual calendar date for this day, DD.MM.YYYY — get this right even when unsure of day_number, since date (not day_number) is what's used to merge and order days across excerpts. If a "Trip start date" is given below and this excerpt only labels days by ordinal ("Day 01", "Day 07"), COMPUTE the date from it (start date + day_number − 1 days) — this is not "inventing", the anchor date makes it a real calculation. Only leave date empty if you can find no day ordinal AND no "Trip start date" was given.
 - day_number: your best guess at this day's position in the OVERALL trip if there's a visible ordinal ("DAY SEVEN" → 7) — but this gets recalculated from `date` after merging regardless, so don't worry if you can't tell.
-- The days-array-per-calendar-day rule still applies within what you can see: a multi-night stay described as one date-range block (e.g. "13 Jan – 18 Jan (6 Nights)") must still be expanded into one entry per night, same hotel repeated, is_first_night true only on the first, is_free_day: true and overview_bullets: ["Freizeit"] where no day-specific activity is given.
 - location_heading: place name ONLY, never the activity type. "/ Ankunft" or "/ Abreise" only on the actual arrival/departure day.
 - overview_bullets: 2-5 short German noun phrases. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
 - day_marker: a SHORT (8-15 words) EXACT, character-for-character excerpt copied verbatim from the very START of this day's section — the day's header line if there is one, or the first distinctive sentence if not. Used afterward to locate the day in the original text and slice its real content, so precision matters more here than for any other field — never paraphrase, translate, reformat, or summarize it. Pick a phrase UNIQUE within the document — not a generic word/phrase that also occurs elsewhere. Every expanded day within an undifferentiated multi-night block shares the IDENTICAL day_marker pointing to where that block begins.
@@ -1127,7 +1131,7 @@ def _chunk_text(text: str, chunk_size: int = 9000, overlap: int = 2000) -> list:
     return chunks
 
 
-def _run_chunk_days(chunk_text: str) -> list:
+def _run_chunk_days(chunk_text: str, trip_start_date: str = "") -> list:
     """Extracts whatever complete days are visible in one chunk. A single
     attempt failing (rate limit, transient network error, malformed JSON)
     used to silently drop that chunk's days entirely with no retry — for a
@@ -1136,7 +1140,20 @@ def _run_chunk_days(chunk_text: str) -> list:
     final result with nothing to catch it. One quick retry after a bad
     attempt fixes the transient case; only a second consecutive failure
     gives up and skips the chunk (adjacent overlapping chunks likely cover
-    the same days anyway)."""
+    the same days anyway).
+
+    trip_start_date: the date of Day 1, if _run_metadata found one anywhere
+    in the full document. Some DMC documents label days only "Day 01",
+    "Day 02"... with the actual calendar date findable nowhere near the
+    day-by-day narrative itself (e.g. only in a pricing/validity section) —
+    a chunk covering just the narrative has no way to compute real dates on
+    its own without this anchor, and used to either fabricate a placeholder
+    or (after that was explicitly disallowed) leave every date blank,
+    which drops the day entirely at the merge-by-date step.
+    """
+    user_msg = chunk_text
+    if trip_start_date:
+        user_msg = f"Trip start date (Day 1): {trip_start_date}\n\n{chunk_text}"
     for attempt in range(2):
         try:
             response = _ai_complete(
@@ -1145,7 +1162,7 @@ def _run_chunk_days(chunk_text: str) -> list:
                 max_tokens=16000,
                 messages=[
                     {"role": "system", "content": STRUCTURE_CHUNK_PROMPT},
-                    {"role": "user",   "content": chunk_text},
+                    {"role": "user",   "content": user_msg},
                 ],
             )
             raw = response.choices[0].message.content.strip()
@@ -1258,9 +1275,10 @@ def _call_ai_structure_chunked(dmc_content: str) -> dict:
 
     def _attempt():
         metadata = _run_metadata(dmc_content)
+        anchor_date = metadata.get("start_date", "")
         all_days = []
         for chunk in chunks:
-            all_days.extend(_run_chunk_days(chunk))
+            all_days.extend(_run_chunk_days(chunk, trip_start_date=anchor_date))
 
         merged_days = _merge_chunk_days(all_days)
         unresolved = _slice_activities_by_markers(merged_days, dmc_content)
