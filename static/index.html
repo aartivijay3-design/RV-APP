@@ -193,6 +193,24 @@
       outline: none;
     }
     .dmc-editor textarea:focus { border-color: var(--gold); }
+    .dmc-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .dmc-row select { flex: 1; margin-top: 0 !important; }
+    .dmc-row-remove {
+      flex: none;
+      background: none;
+      border: 1.5px solid var(--grey-200);
+      border-radius: 4px;
+      width: 32px;
+      height: 32px;
+      font-size: 14px;
+      color: var(--grey-500);
+      cursor: pointer;
+    }
     .dmc-save-btn {
       margin-top: 6px;
       padding: 6px 14px;
@@ -1301,14 +1319,12 @@ Tipp: PDF öffnen → Strg+A → Strg+C → hier einfügen."
         <!-- DMC selection -->
         <div class="field" style="margin-top:20px;">
           <label>Destination / DMC auswählen</label>
-          <div class="hint-text">Wählen Sie den lokalen Partner für diese Reise</div>
-          <select class="field-select" id="dmc-destination" onchange="loadDmcOptions()">
-            <option value="">-- Destination wählen --</option>
-          </select>
-          <select class="field-select" id="dmc-select" style="margin-top:8px;">
-            <option value="">-- DMC wählen --</option>
-          </select>
-          <button type="button" class="dmc-manage-btn" onclick="toggleDmcEditor()">
+          <div class="hint-text">Wählen Sie den/die lokalen Partner für diese Reise — bei mehreren Reiseländern mehrere Zeilen hinzufügen</div>
+          <div id="dmc-rows"></div>
+          <button type="button" class="dmc-manage-btn" onclick="addDmcRow()">
+            + Weiteres Land hinzufügen
+          </button>
+          <button type="button" class="dmc-manage-btn" onclick="toggleDmcEditor()" style="margin-left:16px;">
             ⚙ DMC-Liste bearbeiten
           </button>
           <div class="dmc-editor" id="dmc-editor">
@@ -2155,31 +2171,79 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
   }
   loadDmcData();
 
-  function refreshDmcDestinationDropdown() {
-    const destSel = document.getElementById('dmc-destination');
-    const current = destSel.value;
+  // A trip can cross several countries with a different local partner
+  // each — one row per country/DMC pair, "+ Weiteres Land hinzufügen"
+  // adds another. Starts with a single row.
+  function createDmcRow() {
+    const row = document.createElement('div');
+    row.className = 'dmc-row';
+
+    const destSel = document.createElement('select');
+    destSel.className = 'field-select dmc-row-destination';
     destSel.innerHTML = '<option value="">-- Destination wählen --</option>';
     Object.keys(dmcData).sort().forEach(dest => {
       const opt = document.createElement('option');
       opt.value = dest; opt.textContent = dest;
       destSel.appendChild(opt);
     });
-    destSel.value = current;
-    loadDmcOptions();
+    destSel.addEventListener('change', () => loadDmcRowOptions(destSel));
+
+    const dmcSel = document.createElement('select');
+    dmcSel.className = 'field-select dmc-row-select';
+    dmcSel.innerHTML = '<option value="">-- DMC wählen --</option>';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'dmc-row-remove';
+    removeBtn.title = 'Zeile entfernen';
+    removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', () => removeDmcRow(row));
+
+    row.appendChild(destSel);
+    row.appendChild(dmcSel);
+    row.appendChild(removeBtn);
+    return row;
   }
 
-  function loadDmcOptions() {
-    const dest = document.getElementById('dmc-destination').value;
-    const sel  = document.getElementById('dmc-select');
-    sel.innerHTML = '<option value="">-- DMC wählen --</option>';
+  function addDmcRow() {
+    document.getElementById('dmc-rows').appendChild(createDmcRow());
+  }
+
+  function removeDmcRow(row) {
+    row.remove();
+    if (!document.getElementById('dmc-rows').children.length) addDmcRow();
+  }
+
+  function loadDmcRowOptions(destSel) {
+    const dest = destSel.value;
+    const dmcSel = destSel.closest('.dmc-row').querySelector('.dmc-row-select');
+    dmcSel.innerHTML = '<option value="">-- DMC wählen --</option>';
     if (dest && dmcData[dest]) {
       dmcData[dest].forEach(d => {
         const opt = document.createElement('option');
         opt.value = d.id; opt.textContent = d.name;
-        sel.appendChild(opt);
+        dmcSel.appendChild(opt);
       });
-      if (dmcData[dest].length === 1) sel.value = dmcData[dest][0].id;
+      if (dmcData[dest].length === 1) dmcSel.value = dmcData[dest][0].id;
     }
+  }
+
+  function refreshDmcDestinationDropdown() {
+    const rowsEl = document.getElementById('dmc-rows');
+    if (!rowsEl.children.length) { addDmcRow(); return; }
+    // Rebuild each existing row's destination options (e.g. after adding a
+    // new country in the editor below), preserving its current selection.
+    rowsEl.querySelectorAll('.dmc-row-destination').forEach(destSel => {
+      const current = destSel.value;
+      destSel.innerHTML = '<option value="">-- Destination wählen --</option>';
+      Object.keys(dmcData).sort().forEach(dest => {
+        const opt = document.createElement('option');
+        opt.value = dest; opt.textContent = dest;
+        destSel.appendChild(opt);
+      });
+      destSel.value = current;
+      loadDmcRowOptions(destSel);
+    });
   }
 
   function dmcEscapeHtml(s) {
@@ -2211,8 +2275,9 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
         opt.value = dest;
         countryList.appendChild(opt);
       });
+      const firstRowDest = document.querySelector('.dmc-row-destination');
       document.getElementById('dmc-manage-country').value =
-        document.getElementById('dmc-destination').value || '';
+        (firstRowDest && firstRowDest.value) || '';
       dmcCancelForm();
       dmcRenderContactList();
     }
@@ -2310,8 +2375,6 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
     dmcCancelForm();
     dmcRenderContactList();
     refreshDmcDestinationDropdown();
-    document.getElementById('dmc-destination').value = country;
-    loadDmcOptions();
   }
 
   async function dmcDeleteContact(id) {
@@ -2765,8 +2828,9 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
     if (confActiveTab === 'paste' && !pasteText) {
       alert('Bitte Rechnungstext einfügen.'); return;
     }
-    const dmc_id = document.getElementById('dmc-select').value;
-    const destination = document.getElementById('dmc-destination').value;
+    const dmcIds = Array.from(document.querySelectorAll('.dmc-row-select'))
+      .map(sel => sel.value)
+      .filter(v => v);
 
     const submitBtn = document.getElementById('conf-submit-btn');
     const progWrap  = document.getElementById('conf-progress-wrap');
@@ -2790,8 +2854,7 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
       const fd = new FormData();
       if (confActiveTab === 'file') fd.append('file', confFileInput.files[0]);
       else fd.append('pasted_text', pasteText);
-      fd.append('dmc_id', dmc_id);
-      fd.append('destination', destination);
+      dmcIds.forEach(id => fd.append('dmc_ids', id));
       fd.append('guide_name',  document.getElementById('guide-name').value);
       fd.append('guide_phone', document.getElementById('guide-phone').value);
 

@@ -610,7 +610,7 @@ def _bullet_item(text: str, num_id: str = "20") -> str:
     )
 
 
-def _build_conf_body(rechnung: dict, dmc: dict, guide_name: str, guide_phone: str) -> str:
+def _build_conf_body(rechnung: dict, dmcs, guide_name: str, guide_phone: str) -> str:
     """Build the <w:body> inner XML for the confirmation document."""
     destination = rechnung.get("destination_en", rechnung.get("destination_de", "")).upper()
     start       = rechnung.get("travel_start", "")
@@ -805,18 +805,35 @@ def _build_conf_body(rechnung: dict, dmc: dict, guide_name: str, guide_phone: st
         parts.append(_blank())
 
     # ── CONTACT PERSON ON SITE ────────────────────────────────────
+    # A multi-country trip (e.g. Vietnam + Singapore) has a different local
+    # partner per country — dmcs can be a single dict (old callers, or a
+    # one-DMC trip) or a list of dicts, one per selected DMC.
+    if isinstance(dmcs, dict):
+        dmcs = [dmcs] if dmcs else []
+    dmcs = [d for d in (dmcs or []) if d]
+
     parts.append(_para_gold_bold("CONTACT PERSON ON SITE / LOCAL TRAVEL AGENCY:"))
 
-    dmc_name    = dmc.get("name", "")    if dmc else ""
-    dmc_contact = dmc.get("contact_person", "") if dmc else ""
-    dmc_mobile  = dmc.get("mobile", "")  if dmc else ""
-    dmc_note    = dmc.get("note", "")    if dmc else ""
+    rpr_c  = f'{_IR}{_IC}{_S20}'
+    rpr_cb = f'{_IR}{_B}{_IC}{_S20}'
+    # Only label each block with its country when there's more than one —
+    # a single DMC keeps the original, simpler look.
+    show_country_labels = len(dmcs) > 1
 
-    if dmc_name or dmc_contact or dmc_mobile:
-        # Build single paragraph with line breaks matching reference
-        rpr_c = f'{_IR}{_IC}{_S20}'
-        rpr_cb = f'{_IR}{_B}{_IC}{_S20}'
-        inner = f'<w:r><w:rPr>{rpr_cb}</w:rPr><w:t>{_xe(dmc_name)}</w:t></w:r>'
+    for i, dmc in enumerate(dmcs):
+        dmc_name    = dmc.get("name", "")
+        dmc_contact = dmc.get("contact_person", "")
+        dmc_mobile  = dmc.get("mobile", "")
+        dmc_note    = dmc.get("note", "")
+        dmc_dest    = dmc.get("_destination", "")
+        if not (dmc_name or dmc_contact or dmc_mobile):
+            continue
+
+        inner = ""
+        if show_country_labels and dmc_dest:
+            inner += f'<w:r><w:rPr>{rpr_cb}</w:rPr><w:t>{_xe(dmc_dest.upper())}</w:t></w:r>'
+            inner += f'<w:r><w:rPr>{rpr_c}</w:rPr><w:br/></w:r>'
+        inner += f'<w:r><w:rPr>{rpr_cb}</w:rPr><w:t>{_xe(dmc_name)}</w:t></w:r>'
         if dmc_contact:
             inner += f'<w:r><w:rPr>{rpr_c}</w:rPr><w:br/></w:r>'
             inner += f'<w:r><w:rPr>{rpr_c}</w:rPr><w:t xml:space="preserve">Ansprechpartner: {_xe(dmc_contact)}</w:t></w:r>'
@@ -825,6 +842,8 @@ def _build_conf_body(rechnung: dict, dmc: dict, guide_name: str, guide_phone: st
             inner += f'<w:r><w:rPr>{rpr_c}</w:rPr><w:br/></w:r>'
             inner += f'<w:r><w:rPr>{rpr_c}</w:rPr><w:t xml:space="preserve">Mobile: {_xe(dmc_mobile)}{_xe(note_txt)}</w:t></w:r>'
         parts.append(f'<w:p><w:pPr><w:rPr>{rpr_c}</w:rPr></w:pPr>{inner}</w:p>')
+        if i < len(dmcs) - 1:
+            parts.append(_blank())
 
     # ── Closing text ──────────────────────────────────────────────
     parts.append(_blank())
@@ -873,8 +892,10 @@ def inject_into_conf_template(body_xml: str) -> bytes:
     return buf.getvalue()
 
 
-def build_confirmation_docx(rechnung: dict, dmc: dict, guide_name: str, guide_phone: str) -> bytes:
-    body_xml = _build_conf_body(rechnung, dmc or {}, guide_name or "", guide_phone or "")
+def build_confirmation_docx(rechnung: dict, dmcs, guide_name: str, guide_phone: str) -> bytes:
+    """dmcs: a single DMC dict, a list of DMC dicts (multi-country trip), or
+    falsy for none — see _build_conf_body."""
+    body_xml = _build_conf_body(rechnung, dmcs or {}, guide_name or "", guide_phone or "")
     return inject_into_conf_template(body_xml)
 
 

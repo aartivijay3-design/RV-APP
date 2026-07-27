@@ -14,7 +14,7 @@ import json
 import os
 import secrets
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -311,8 +311,7 @@ async def save_dmcs(payload: dict):
 async def generate_confirmation(
     file: Optional[UploadFile] = File(default=None),
     pasted_text: str = Form(default=""),
-    dmc_id: str = Form(default=""),
-    destination: str = Form(default=""),
+    dmc_ids: List[str] = Form(default=[]),
     guide_name: str = Form(default=""),
     guide_phone: str = Form(default=""),
 ):
@@ -324,23 +323,29 @@ async def generate_confirmation(
     except Exception as e:
         raise HTTPException(500, f"Rechnung konnte nicht verarbeitet werden: {e}")
 
-    # Find DMC — completely optional; if not selected, dmc stays {}
-    dmc: dict = {}
+    # Find DMCs — completely optional; if none selected, dmcs stays [].
+    # A trip spanning several countries can have one DMC per destination,
+    # so this is a list, not a single lookup — each dmc_id is matched
+    # against every destination's contact list and tagged with which
+    # destination it belongs to (for the "COUNTRY:" label in the doc when
+    # there's more than one).
+    dmcs: list = []
     try:
         dmcs_all = json.loads(DMCS_PATH.read_text(encoding="utf-8")) if DMCS_PATH.exists() else {}
-        for dest_dmcs in dmcs_all.values():
-            for d in dest_dmcs:
-                if d.get("id") == dmc_id:
-                    dmc = d
+        for dmc_id in dmc_ids:
+            if not dmc_id:
+                continue
+            for dest_name, dest_dmcs in dmcs_all.items():
+                match = next((d for d in dest_dmcs if d.get("id") == dmc_id), None)
+                if match:
+                    dmcs.append({**match, "_destination": dest_name})
                     break
-        if not dmc and destination:
-            dmc = (dmcs_all.get(destination) or [{}])[0]
     except Exception:
         pass  # DMC lookup failure should never block document generation
 
     # Build document
     try:
-        docx_bytes = build_confirmation_docx(rechnung_data, dmc, guide_name, guide_phone)
+        docx_bytes = build_confirmation_docx(rechnung_data, dmcs, guide_name, guide_phone)
     except Exception as e:
         raise HTTPException(500, f"Dokument konnte nicht erstellt werden: {e}")
 
