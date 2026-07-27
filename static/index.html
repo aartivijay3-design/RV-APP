@@ -204,6 +204,69 @@
       font-weight: 600;
       cursor: pointer;
     }
+    .dmc-cancel-btn {
+      margin-top: 6px;
+      margin-left: 6px;
+      padding: 6px 14px;
+      background: none;
+      color: var(--grey-500);
+      border: 1.5px solid var(--grey-200);
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .dmc-add-btn {
+      margin-top: 8px;
+      padding: 6px 14px;
+      background: var(--gold);
+      color: var(--white);
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .dmc-contact-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 10px;
+      background: var(--grey-100);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--teal);
+      line-height: 1.5;
+    }
+    .dmc-contact-actions button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 4px;
+    }
+    .dmc-form-field {
+      margin-bottom: 8px;
+    }
+    .dmc-form-field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--grey-500);
+      margin-bottom: 2px;
+    }
+    .dmc-form-field input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 9px;
+      border: 1.5px solid var(--grey-200);
+      border-radius: 5px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+    }
+    .dmc-form-field input:focus { border-color: var(--gold); }
 
     /* ── Tab bar (within form) ── */
     .tab-bar {
@@ -1249,13 +1312,42 @@ Tipp: PDF öffnen → Strg+A → Strg+C → hier einfügen."
             ⚙ DMC-Liste bearbeiten
           </button>
           <div class="dmc-editor" id="dmc-editor">
-            <div style="font-size:11px;color:var(--grey-500);margin-bottom:4px;">
-              JSON-Format bearbeiten — Änderungen werden gespeichert
+            <div style="font-size:11px;color:var(--grey-500);margin-bottom:6px;">
+              Land eingeben oder auswählen — neu oder bestehend
             </div>
-            <textarea id="dmc-json-editor"></textarea>
-            <button type="button" class="dmc-save-btn" onclick="saveDmcList()">
-              💾 Speichern
+            <input type="text" id="dmc-manage-country" list="dmc-country-list"
+              class="field-select" style="width:100%;"
+              placeholder="z.B. Thailand"
+              oninput="dmcRenderContactList()">
+            <datalist id="dmc-country-list"></datalist>
+
+            <div id="dmc-contact-list" style="margin-top:12px;"></div>
+            <button type="button" class="dmc-add-btn" id="dmc-add-btn"
+              onclick="dmcShowAddForm()" style="display:none;">
+              + Neuer Kontakt
             </button>
+
+            <div id="dmc-contact-form" style="display:none;margin-top:12px;padding:12px;background:var(--white);border:1.5px solid var(--grey-200);border-radius:6px;">
+              <input type="hidden" id="dmc-form-id">
+              <div class="dmc-form-field">
+                <label>Firma / Name *</label>
+                <input type="text" id="dmc-form-name" placeholder="z.B. Asia Concierge">
+              </div>
+              <div class="dmc-form-field">
+                <label>Ansprechpartner</label>
+                <input type="text" id="dmc-form-contact" placeholder="z.B. Mrs. Pornsurang Sirivandee">
+              </div>
+              <div class="dmc-form-field">
+                <label>Mobil / Telefon</label>
+                <input type="text" id="dmc-form-mobile" placeholder="+66 6 3212 2707">
+              </div>
+              <div class="dmc-form-field">
+                <label>Notiz</label>
+                <input type="text" id="dmc-form-note" placeholder="z.B. Notfallnummer">
+              </div>
+              <button type="button" class="dmc-save-btn" onclick="dmcSaveContactForm()">💾 Speichern</button>
+              <button type="button" class="dmc-cancel-btn" onclick="dmcCancelForm()">Abbrechen</button>
+            </div>
           </div>
         </div>
 
@@ -2058,16 +2150,23 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
     try {
       const r = await fetch('/api/dmcs');
       dmcData = await r.json();
-      const destSel = document.getElementById('dmc-destination');
-      Object.keys(dmcData).forEach(dest => {
-        const opt = document.createElement('option');
-        opt.value = dest; opt.textContent = dest;
-        destSel.appendChild(opt);
-      });
-      document.getElementById('dmc-json-editor').value = JSON.stringify(dmcData, null, 2);
+      refreshDmcDestinationDropdown();
     } catch(e) { console.warn('DMC load failed', e); }
   }
   loadDmcData();
+
+  function refreshDmcDestinationDropdown() {
+    const destSel = document.getElementById('dmc-destination');
+    const current = destSel.value;
+    destSel.innerHTML = '<option value="">-- Destination wählen --</option>';
+    Object.keys(dmcData).sort().forEach(dest => {
+      const opt = document.createElement('option');
+      opt.value = dest; opt.textContent = dest;
+      destSel.appendChild(opt);
+    });
+    destSel.value = current;
+    loadDmcOptions();
+  }
 
   function loadDmcOptions() {
     const dest = document.getElementById('dmc-destination').value;
@@ -2083,31 +2182,148 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
     }
   }
 
-  function toggleDmcEditor() {
-    const ed = document.getElementById('dmc-editor');
-    ed.style.display = ed.style.display === 'none' ? 'block' : 'none';
+  function dmcEscapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, m => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]
+    ));
   }
 
-  async function saveDmcList() {
-    try {
-      const val = JSON.parse(document.getElementById('dmc-json-editor').value);
-      await fetch('/api/dmcs', { method:'POST',
-        headers:{'Content-Type':'application/json'}, body: JSON.stringify(val) });
-      dmcData = val;
-      // Refresh destination dropdown
-      const destSel = document.getElementById('dmc-destination');
-      const current = destSel.value;
-      destSel.innerHTML = '<option value="">-- Destination wählen --</option>';
-      Object.keys(dmcData).forEach(dest => {
+  function dmcSlugify(name, country) {
+    const base = (name + '_' + country).toLowerCase()
+      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return base || ('dmc_' + Date.now());
+  }
+
+  // Simple form-based manager — replaces raw JSON editing. Enter a country
+  // (existing or new), see its contacts as a list, add/edit/delete one at
+  // a time. Every change auto-saves immediately via /api/dmcs, so there's
+  // no separate "save everything" step to forget.
+  function toggleDmcEditor() {
+    const ed = document.getElementById('dmc-editor');
+    const opening = ed.style.display !== 'block';
+    ed.style.display = opening ? 'block' : 'none';
+    if (opening) {
+      const countryList = document.getElementById('dmc-country-list');
+      countryList.innerHTML = '';
+      Object.keys(dmcData).sort().forEach(dest => {
         const opt = document.createElement('option');
-        opt.value = dest; opt.textContent = dest;
-        destSel.appendChild(opt);
+        opt.value = dest;
+        countryList.appendChild(opt);
       });
-      destSel.value = current;
-      loadDmcOptions();
-      toggleDmcEditor();
-      alert('DMC-Liste gespeichert!');
-    } catch(e) { alert('Fehler: ungültiges JSON — ' + e.message); }
+      document.getElementById('dmc-manage-country').value =
+        document.getElementById('dmc-destination').value || '';
+      dmcCancelForm();
+      dmcRenderContactList();
+    }
+  }
+
+  function dmcRenderContactList() {
+    const country = document.getElementById('dmc-manage-country').value.trim();
+    const listEl  = document.getElementById('dmc-contact-list');
+    const addBtn  = document.getElementById('dmc-add-btn');
+    listEl.innerHTML = '';
+    if (!country) { addBtn.style.display = 'none'; return; }
+    addBtn.style.display = 'inline-block';
+    const contacts = dmcData[country] || [];
+    if (!contacts.length) {
+      listEl.innerHTML = '<div style="font-size:12px;color:var(--grey-500);padding:4px 0;">Noch keine Kontakte für dieses Land.</div>';
+      return;
+    }
+    contacts.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'dmc-contact-row';
+      row.innerHTML = `
+        <div>
+          <strong>${dmcEscapeHtml(c.name)}</strong>
+          ${c.contact_person ? '<br>' + dmcEscapeHtml(c.contact_person) : ''}
+          ${c.mobile ? '<br>' + dmcEscapeHtml(c.mobile) : ''}
+          ${c.note ? '<br><em>' + dmcEscapeHtml(c.note) + '</em>' : ''}
+        </div>
+        <div class="dmc-contact-actions">
+          <button type="button" title="Bearbeiten" onclick="dmcShowEditForm('${dmcEscapeHtml(c.id)}')">✏️</button>
+          <button type="button" title="Löschen" onclick="dmcDeleteContact('${dmcEscapeHtml(c.id)}')">🗑️</button>
+        </div>`;
+      listEl.appendChild(row);
+    });
+  }
+
+  function dmcShowAddForm() {
+    if (!document.getElementById('dmc-manage-country').value.trim()) {
+      alert('Bitte zuerst ein Land/Destination angeben.'); return;
+    }
+    document.getElementById('dmc-form-id').value = '';
+    document.getElementById('dmc-form-name').value = '';
+    document.getElementById('dmc-form-contact').value = '';
+    document.getElementById('dmc-form-mobile').value = '';
+    document.getElementById('dmc-form-note').value = '';
+    document.getElementById('dmc-contact-form').style.display = 'block';
+  }
+
+  function dmcShowEditForm(id) {
+    const country  = document.getElementById('dmc-manage-country').value.trim();
+    const contacts = dmcData[country] || [];
+    const c = contacts.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('dmc-form-id').value = c.id;
+    document.getElementById('dmc-form-name').value = c.name || '';
+    document.getElementById('dmc-form-contact').value = c.contact_person || '';
+    document.getElementById('dmc-form-mobile').value = c.mobile || '';
+    document.getElementById('dmc-form-note').value = c.note || '';
+    document.getElementById('dmc-contact-form').style.display = 'block';
+  }
+
+  function dmcCancelForm() {
+    document.getElementById('dmc-contact-form').style.display = 'none';
+  }
+
+  async function dmcPersist() {
+    try {
+      await fetch('/api/dmcs', { method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(dmcData) });
+    } catch(e) {
+      alert('Fehler beim Speichern: ' + e.message);
+    }
+  }
+
+  async function dmcSaveContactForm() {
+    const country = document.getElementById('dmc-manage-country').value.trim();
+    if (!country) { alert('Bitte ein Land/Destination angeben.'); return; }
+    const name = document.getElementById('dmc-form-name').value.trim();
+    if (!name) { alert('Bitte einen Firmennamen angeben.'); return; }
+
+    const id = document.getElementById('dmc-form-id').value;
+    const contact = {
+      id: id || dmcSlugify(name, country),
+      name,
+      contact_person: document.getElementById('dmc-form-contact').value.trim(),
+      mobile: document.getElementById('dmc-form-mobile').value.trim(),
+      note: document.getElementById('dmc-form-note').value.trim(),
+    };
+
+    if (!dmcData[country]) dmcData[country] = [];
+    const idx = dmcData[country].findIndex(c => c.id === contact.id);
+    if (idx >= 0) dmcData[country][idx] = contact;
+    else dmcData[country].push(contact);
+
+    await dmcPersist();
+    dmcCancelForm();
+    dmcRenderContactList();
+    refreshDmcDestinationDropdown();
+    document.getElementById('dmc-destination').value = country;
+    loadDmcOptions();
+  }
+
+  async function dmcDeleteContact(id) {
+    const country = document.getElementById('dmc-manage-country').value.trim();
+    if (!country || !dmcData[country]) return;
+    const c = dmcData[country].find(x => x.id === id);
+    if (!confirm(`"${c ? c.name : id}" wirklich löschen?`)) return;
+    dmcData[country] = dmcData[country].filter(x => x.id !== id);
+    if (!dmcData[country].length) delete dmcData[country];
+    await dmcPersist();
+    dmcRenderContactList();
+    refreshDmcDestinationDropdown();
   }
 
   // ══════════════════════════════════════════════════════════════
