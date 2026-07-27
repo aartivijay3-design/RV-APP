@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import HTTPException, UploadFile
 
 from ai_client import _ai_complete, AI_MODEL
-from extraction import _legacy_read_excel, _legacy_read_word, _legacy_read_pdf
+from extraction import _legacy_read_excel, _legacy_read_word, _legacy_read_pdf, _read_pdf_via_vision
 
 CONF_EXTRACT_PROMPT = """Extract the following information from this German travel invoice (Rechnung) and return ONLY valid JSON, no markdown.
 
@@ -404,6 +404,7 @@ Rules:
 - If dates are missing, use 01.01.2026 as travel_start and count forward
 - Characters shown as '?' may be umlauts (ü/ö/ä/Ü) or quote marks — infer from context
 - Extract ALL hotels mentioned in the document. A document may have NO hotels at all (flights-only itinerary) — in that case return an empty hotels list, do not invent one.
+- Some bookings are NOT a hotel but a boat/yacht charter — recognizable from wording like "ab/bis [Marina]" (from/to a marina, i.e. the charter's start and return point) and a vessel name/model instead of a hotel name (e.g. "Catamaran Lagoon 42"). Treat this exactly like a hotel entry in the `hotels` list: hotel_name = the vessel name, city = the marina/port name (e.g. "ab/bis Marmaris Marina" → city "Marmaris"), nights/check_in/check_out as given. Leave room_type and meal_plan_en empty rather than inventing one if the document gives no room/meal-plan equivalent for the charter.
 - checkout_note: if a late check-out time is mentioned for a hotel, write in English (e.g. "Late check-out until 18:00"). Otherwise empty string.
 - checkin_note: if early check-in is mentioned for a hotel, write in English. Otherwise empty string.
 - notes: any special remark tied to a specific hotel — room upgrades (e.g. "Bemerkung: garantiertes Upgrade Corner Suite"), F&B/dining credits, complimentary amenities. Translate to English. Empty string if none.
@@ -664,7 +665,11 @@ def _build_conf_body(rechnung: dict, dmc: dict, guide_name: str, guide_phone: st
         name = h.get("hotel_name", "")
         city = h.get("city", "")
         room = h.get("room_type", "")
-        meal = h.get("meal_plan_en", "breakfast")
+        # A boat/yacht charter has no meal-plan equivalent — the AI leaves
+        # this genuinely blank rather than guessing "breakfast" for it, so
+        # only fall back to the default when the field is truly missing.
+        meal = h.get("meal_plan_en") if "meal_plan_en" in h else "breakfast"
+        meal = meal or ""
 
         short_ci = _short_date(ci)
         short_co = _short_date(co)
@@ -690,7 +695,11 @@ def _build_conf_body(rechnung: dict, dmc: dict, guide_name: str, guide_phone: st
         # ROOM cell — room type + meal + checkout/checkin notes
         checkout_note = h.get("checkout_note", "").strip()
         checkin_note  = h.get("checkin_note",  "").strip()
-        room_paras = [_tbl_para(f"1 x {room}"), _tbl_para(f"incl. {meal}")]
+        room_paras = []
+        if room:
+            room_paras.append(_tbl_para(f"1 x {room}"))
+        if meal:
+            room_paras.append(_tbl_para(f"incl. {meal}"))
         if checkin_note:
             room_paras.append(_tbl_para(checkin_note))
         if checkout_note:
@@ -878,7 +887,15 @@ async def _extract_rechnung_text(file: Optional[UploadFile], pasted_text: str) -
         fb = await file.read()
         ext = Path(file.filename).suffix.lower()
         if ext == ".pdf":
-            return _legacy_read_pdf(fb)
+            text = _legacy_read_pdf(fb)
+            if len(text.strip()) < 50:
+                # No usable text layer — likely every page is a flattened
+                # image (scanned Rechnung, or one exported to image rather
+                # than real text) rather than a genuinely empty file.
+                vision_text = _read_pdf_via_vision(fb)
+                if vision_text.strip():
+                    return vision_text
+            return text
         elif ext == ".docx":
             return _legacy_read_word(fb, max_chars=None)
         elif ext in (".xlsx", ".xls"):

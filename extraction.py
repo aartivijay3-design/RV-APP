@@ -8,6 +8,7 @@ from pathlib import Path
 import docx as python_docx
 import openpyxl
 import pypdf
+import fitz  # PyMuPDF — full-page PDF rendering for the vision-OCR fallback
 try:
     from markitdown import MarkItDown as _MarkItDown
     _markitdown = _MarkItDown()
@@ -129,6 +130,21 @@ def _legacy_read_pdf(file_bytes: bytes) -> str:
 
 # ── Image reader (JPG / PNG via Gemini vision) ────────────────────────────────
 
+_IMAGE_EXTRACTION_PROMPT = (
+    "This is a travel-related document — it could be a DMC itinerary, a "
+    "hotel/accommodation invoice (Rechnung), or a booking confirmation. "
+    "Transcribe ALL visible text and structured information faithfully, "
+    "preserving table structure and layout order: client name(s), dates, "
+    "number of nights, destination/city, accommodation details (usually a "
+    "hotel with room type and meal plan — but some bookings are a boat/yacht "
+    "charter instead, e.g. \"Catamaran Lagoon 42\", \"ab/bis Marmaris "
+    "Marina\"; transcribe the vessel name and departure/return marina in "
+    "that case rather than treating it as missing), day-by-day activities "
+    "if present, transfers, prices, and any other detail visible. Output as "
+    "structured plain text."
+)
+
+
 def read_image(file_bytes: bytes, mime_type: str) -> str:
     b64 = base64.b64encode(file_bytes).decode()
     response = _ai_complete(
@@ -143,17 +159,41 @@ def read_image(file_bytes: bytes, mime_type: str) -> str:
                 },
                 {
                     "type": "text",
-                    "text": (
-                        "This is a DMC travel itinerary document image. "
-                        "Extract ALL information: client name, all day-by-day activities, "
-                        "dates, cities, hotels with room types and meal plans, transfers, "
-                        "and any special experiences. Output as structured plain text."
-                    ),
+                    "text": _IMAGE_EXTRACTION_PROMPT,
                 },
             ],
         }],
     )
     return response.choices[0].message.content.strip()
+
+
+def _read_pdf_via_vision(file_bytes: bytes) -> str:
+    """Falls back to Gemini vision OCR when a PDF has no usable text layer.
+    Some invoicing/booking systems generate PDFs where the actual content
+    (dates, hotel table, price) is drawn as vector graphics/outlined text
+    rather than real font glyphs — pypdf's extract_text() then returns
+    nothing on every page with no error to catch, and grabbing just the
+    page's embedded background image (e.g. a letterhead) misses the
+    content entirely, since it isn't part of that image either. Rendering
+    the full page as PyMuPDF does — compositing the background image with
+    whatever vector content is drawn on top, the same way a PDF viewer
+    would display it — and OCRing that rendered page is the only way to
+    recover it.
+    """
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    pages_text = []
+    for i, page in enumerate(doc):
+        try:
+            pixmap = page.get_pixmap(dpi=150)
+            png_bytes = pixmap.tobytes("png")
+            text = read_image(png_bytes, "image/png")
+        except Exception as e:
+            print(f"Vision OCR failed for PDF page {i + 1}: {e}")
+            continue
+        if text.strip():
+            pages_text.append(text.strip())
+    doc.close()
+    return "\n\n".join(pages_text)
 
 
 # ── Smart dispatcher ──────────────────────────────────────────────────────────
@@ -208,6 +248,14 @@ def extract_dmc_content(file_bytes: bytes, filename: str) -> str:
         # and was silently cutting long itineraries off at 8500 chars.
         return _legacy_read_word(file_bytes, max_chars=None)
     elif ext == ".pdf":
-        return _legacy_read_pdf(file_bytes)
+        text = _legacy_read_pdf(file_bytes)
+        if len(text.strip()) < 50:
+            # No usable text layer — likely every page is a flattened image
+            # (scanned document, or a Rechnung exported to image rather
+            # than real text) rather than a genuinely empty/corrupt file.
+            vision_text = _read_pdf_via_vision(file_bytes)
+            if vision_text.strip():
+                return vision_text
+        return text
     else:
         raise HTTPException(400, f"Unsupported file type: {ext}. Supported: .xlsx, .docx, .pdf, .txt, .jpg, .png")
