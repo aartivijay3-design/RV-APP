@@ -1627,18 +1627,26 @@ def _backfill_missing_hotels(days: list) -> None:
     Deliberately conservative: only fires when the (suffix-stripped)
     location_heading exactly matches the last day that had a real hotel —
     guessing across an actual city change would silently attach the wrong
-    hotel, which is worse than a visibly missing one.
+    hotel, which is worse than a visibly missing one. Also never fires on
+    a departure day ("/ Abreise") — that day has no overnight stay by
+    design (the client checks out and leaves), so a missing hotel there is
+    correct, not a gap to fill. Without this exclusion, a departure day at
+    the same city as the previous night incorrectly inherited that night's
+    hotel, showing an "Übernachtung im X" line for a night that never
+    happens.
     """
     last_hotel = None
     last_location = None
     for day in days:
         hotel = day.get("hotel")
         name = (hotel.get("name") or "").strip() if isinstance(hotel, dict) else ""
-        location = _strip_location_suffix(day.get("location_heading", ""))
+        heading = day.get("location_heading", "")
+        location = _strip_location_suffix(heading)
+        is_departure = bool(re.search(r"/\s*Abreise\s*$", heading, re.IGNORECASE))
         if name:
             last_hotel = hotel
             last_location = location
-        elif last_hotel and location and location == last_location:
+        elif last_hotel and location and location == last_location and not is_departure:
             day["hotel"] = {**last_hotel, "is_first_night": False, "description": ""}
 
 
