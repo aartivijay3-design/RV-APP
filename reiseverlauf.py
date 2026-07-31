@@ -1029,7 +1029,7 @@ STRUCTURE_PROMPT = """Extract the structure from this DMC travel offer. Return O
 Rules:
 - THE days ARRAY MUST CONTAIN EXACTLY ONE ENTRY PER CALENDAR DAY OF THE TRIP — from start_date through end_date, no gaps, no merging. This is the single most important rule below. DMC offers often describe a multi-night hotel stay as ONE date-range block instead of listing each night separately — for example "13 Jan – 18 Jan (6 Nights) Phu Quoc Island, Regent Phu Quoc" describes 6 calendar days at ONE hotel with no day-by-day breakdown given, and the same applies to a range written as "Day 13 – Day 19 | Enjoy Golf and pamper yourself with spa treatments" — that has a real (if brief) activity sentence, so it is real narrative content. Expand either kind into one entry per calendar date (day_number N through N+5, same hotel repeated, is_first_night true only on the first), not one entry for the whole block. The same applies to a "FREE TIME AT LEISURE" block spanning several nights, or any other stretch with no explicit day-by-day activity list — every one of those nights still gets its own entry, with is_free_day: true and overview_bullets: ["Freizeit"] on the ones with nothing specific listed. Before finishing, count: does the number of entries in `days` equal the number of nights in the trip (or nights + 1 if the departure day also gets its own entry)? If not, you have merged days that must be split apart.
 - EXCEPTION to the rule above — do not extract a day entry from a table row that is PURELY logistics: just a day number/date, a destination, and a hotel/room/meal-plan, with NO activity sentence anywhere in the row (e.g. "Day 01 | Colombo | Shangri La Colombo | Horizon Club | Bed & Breakfast Basis" and nothing else). Many DMC documents restate their days a second time in a trailing "Accommodation Summary"/"Hotel Summary" table, after the real day-by-day narrative earlier in the document — extracting from both produced a 20-day trip that came out as 39 days, because that table's dateless rows each got a fabricated placeholder date and never matched up with the real days. This exception applies ONLY to that exact bare shape — never to a row with any activity sentence, however brief. When genuinely unsure which of the two this is, prefer expanding it per the rule above (a duplicate merges away harmlessly later; a dropped real day does not). Never invent a date for a day when none can be determined from context.
-- location_heading: the place name ONLY — "Hakone", "Kyoto", "Tokyo / Ankunft", "Kyoto - Kinosaki Onsen". NEVER describe the activity type here ("Ganztägige Tour in Hakone", "Halbtägige Tour in Kyoto") — that belongs in overview_bullets, not the heading. Use "/ Ankunft" or "/ Abreise" only on the actual arrival/departure day, and "CityA - CityB" only on a day that transfers between two places.
+- location_heading: the place name ONLY — "Hakone", "Kyoto", "Tokyo / Ankunft", "Kyoto - Kinosaki Onsen". NEVER describe the activity type here ("Ganztägige Tour in Hakone", "Halbtägige Tour in Kyoto") — that belongs in overview_bullets, not the heading. Never append the touring/excursion destination if it differs from the town the hotel is actually in (e.g. touring "Sigiriya" while the hotel is in "Habarana": heading is "Habarana", not "Sigiriya" and not "Sigiriya / Habarana" — the excursion name belongs in overview_bullets). Use "CityA - CityB" (hyphen, starting city to ending city) only on a day that changes which city the hotel is in — never a slash for this. Use "/ Ankunft" only on the actual arrival day, "/ Abreise" only on the actual departure day, appended to whichever city name is correct for that day — if the day both transfers AND departs (e.g. a transfer from the last hotel's city straight to the airport for the international flight home), it's "CityA - CityB / Abreise", not just the airport name or an unrelated city.
 - overview_bullets: 2-5 short German noun phrases per day. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
 - day_marker: a SHORT (8-15 words) EXACT, character-for-character excerpt copied verbatim from the very START of this day's section in the source document — the day's header line if there is one (e.g. "DAY SEVEN - MONDAY, 11 JAN 2027"), or the first distinctive sentence describing that day if there's no explicit header. This is used afterward to programmatically locate the day in the original text and slice out its real content, so precision matters more here than for any other field — copy it EXACTLY as it appears (capitalization, punctuation, spacing), never paraphrase, translate, reformat, or summarize it. Pick a phrase that is UNIQUE within the whole document — never a generic word/phrase that also occurs elsewhere ("Breakfast", "Overnight stay", a bare date that repeats). For a multi-night block with no day-by-day breakdown (see the days-array rule above), every expanded day within that same block shares the IDENTICAL day_marker pointing to where the block begins — do not invent different markers for days that have no distinct text of their own.
 - hotel.is_first_night = true only on first arrival at each hotel.
@@ -1104,7 +1104,7 @@ Rules:
 - Only include a day whose content is FULLY visible in this excerpt. If a day's description is visibly cut off at the very start or end of what you're given (trails off with no clear beginning/end), do NOT include it — an overlapping adjacent excerpt covers it completely elsewhere. It's fine and expected for a day to also appear in an adjacent excerpt; duplicates get merged and de-duplicated afterward by date.
 - date: the actual calendar date for this day, DD.MM.YYYY — get this right even when unsure of day_number, since date (not day_number) is what's used to merge and order days across excerpts. If a "Trip start date" is given below and this excerpt only labels days by ordinal ("Day 01", "Day 07"), COMPUTE the date from it (start date + day_number − 1 days) — this is not "inventing", the anchor date makes it a real calculation. Only leave date empty if you can find no day ordinal AND no "Trip start date" was given.
 - day_number: your best guess at this day's position in the OVERALL trip if there's a visible ordinal ("DAY SEVEN" → 7) — but this gets recalculated from `date` after merging regardless, so don't worry if you can't tell.
-- location_heading: place name ONLY, never the activity type. "/ Ankunft" or "/ Abreise" only on the actual arrival/departure day.
+- location_heading: place name ONLY, never the activity type — never append the touring/excursion destination if it differs from the town the hotel is actually in (e.g. touring "Sigiriya" while the hotel itself is in "Habarana": heading is "Habarana", not "Sigiriya" and not "Sigiriya / Habarana" — the excursion name belongs in overview_bullets, not the heading). On a day that changes which city the hotel is in, use "CityA - CityB" (hyphen, the day's starting city to its ending city) — never a slash for this, the slash is reserved for the two cases below. "/ Ankunft" only on the actual arrival day, "/ Abreise" only on the actual departure day — append it to whichever city name is correct for that day (if the day both transfers AND departs, e.g. a transfer from the last hotel's city straight to the airport for an international flight home, it's "CityA - CityB / Abreise", not just the airport name or an unrelated city).
 - overview_bullets: 2-5 short German noun phrases. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
 - day_marker: a SHORT (8-15 words) EXACT, character-for-character excerpt copied verbatim from the very START of this day's section — the day's header line if there is one, or the first distinctive sentence if not. Used afterward to locate the day in the original text and slice its real content, so precision matters more here than for any other field — never paraphrase, translate, reformat, or summarize it. Pick a phrase UNIQUE within the document — not a generic word/phrase that also occurs elsewhere. Every expanded day within an undifferentiated multi-night block shares the IDENTICAL day_marker pointing to where that block begins.
 - hotel.is_first_night = true only on first arrival at each hotel (within what's visible in this excerpt — a day continuing an already-established hotel stay from before this excerpt should still be false).
@@ -1338,6 +1338,7 @@ def _call_ai_structure_chunked(dmc_content: str) -> dict:
         print(f"[structure-chunk] WARNING — issues remain after retry: {v}", flush=True)
 
     _backfill_missing_hotels(result.get("days", []))
+    _clear_departure_day_hotels(result.get("days", []))
     result["days"] = _merge_undifferentiated_days(result.get("days", []))
     return result
 
@@ -1648,6 +1649,22 @@ def _backfill_missing_hotels(days: list) -> None:
             last_location = location
         elif last_hotel and location and location == last_location and not is_departure:
             day["hotel"] = {**last_hotel, "is_first_night": False, "description": ""}
+
+
+def _clear_departure_day_hotels(days: list) -> None:
+    """A departure day ("/ Abreise") never has an overnight stay by
+    design — the client checks out and leaves that day. This is a
+    safety net independent of _backfill_missing_hotels: the AI's own
+    direct extraction can still assign a hotel to the departure day
+    (e.g. carrying the previous night's hotel over on its own, not via
+    the backfill path), which showed up as a wrong "Übernachtung im X"
+    line on the last day of the trip. Runs after backfill so it wins
+    regardless of where the hotel value came from.
+    """
+    for day in days:
+        heading = day.get("location_heading", "")
+        if re.search(r"/\s*Abreise\s*$", heading, re.IGNORECASE):
+            day["hotel"] = None
 
 
 def _merge_undifferentiated_days(days: list) -> list:
@@ -1972,6 +1989,7 @@ def _call_ai_structure_single(dmc_content: str) -> dict:
             print(f"[structure] WARNING — issues remain after retry: {v}", flush=True)
 
     _backfill_missing_hotels(result.get("days", []))
+    _clear_departure_day_hotels(result.get("days", []))
     result["days"] = _merge_undifferentiated_days(result.get("days", []))
     return result
 
