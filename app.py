@@ -13,6 +13,8 @@ import base64
 import json
 import os
 import secrets
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -30,7 +32,7 @@ from rechnung import (
 )
 import reference_db
 import github_store
-from paths import OUTPUT_DIR, DMCS_PATH
+from paths import OUTPUT_DIR, DMCS_PATH, FEEDBACK_PATH
 
 app = FastAPI(title="BAWA Reiseverlauf Generator")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -301,6 +303,52 @@ async def save_dmcs(payload: dict):
     """Overwrite the DMC list (called from the Manage DMCs UI)."""
     DMCS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     github_store.push("dmcs.json", DMCS_PATH, "Update dmcs.json via Manage DMCs UI")
+    return {"status": "saved"}
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  FEEDBACK
+# ═══════════════════════════════════════════════════════════════════
+
+github_store.pull("feedback.json", FEEDBACK_PATH)
+
+
+@app.get("/api/feedback")
+async def get_feedback():
+    """Return all feedback entries, newest first."""
+    if not FEEDBACK_PATH.exists():
+        return []
+    entries = json.loads(FEEDBACK_PATH.read_text(encoding="utf-8"))
+    return sorted(entries, key=lambda e: e.get("timestamp", ""), reverse=True)
+
+
+@app.post("/api/feedback")
+async def submit_feedback(
+    area: str = Form(default=""),
+    kind: str = Form(default=""),
+    message: str = Form(...),
+    name: str = Form(default=""),
+):
+    """Append one feedback entry. Every submission is pulled/pushed
+    individually (not just cached in memory) so nothing is lost if the
+    process restarts on a host with no persistent disk — same reasoning
+    as the DMC list and reference database."""
+    message = message.strip()
+    if not message:
+        raise HTTPException(400, "Bitte eine Nachricht eingeben.")
+
+    github_store.pull("feedback.json", FEEDBACK_PATH)
+    entries = json.loads(FEEDBACK_PATH.read_text(encoding="utf-8")) if FEEDBACK_PATH.exists() else []
+    entries.append({
+        "id": uuid.uuid4().hex[:8],
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "name": name.strip(),
+        "area": area.strip(),
+        "kind": kind.strip(),
+        "message": message,
+    })
+    FEEDBACK_PATH.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    github_store.push("feedback.json", FEEDBACK_PATH, "New feedback submission")
     return {"status": "saved"}
 
 

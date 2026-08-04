@@ -20,6 +20,7 @@ if _PERSIST_DIR:
     _base = Path(_PERSIST_DIR)
     DATA_DIR = _base / "data"
     DMCS_PATH = _base / "dmcs.json"
+    FEEDBACK_PATH = _base / "feedback.json"
     OUTPUT_DIR = _base / "output"
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -31,9 +32,13 @@ if _PERSIST_DIR:
     _seed_dmcs = APP_DIR / "dmcs.json"
     if _seed_dmcs.exists() and not DMCS_PATH.exists():
         shutil.copy(_seed_dmcs, DMCS_PATH)
+    _seed_feedback = APP_DIR / "feedback.json"
+    if _seed_feedback.exists() and not FEEDBACK_PATH.exists():
+        shutil.copy(_seed_feedback, FEEDBACK_PATH)
 else:
     DATA_DIR = APP_DIR / "data"
     DMCS_PATH = APP_DIR / "dmcs.json"
+    FEEDBACK_PATH = APP_DIR / "feedback.json"
     OUTPUT_DIR = APP_DIR / "output"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

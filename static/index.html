@@ -472,6 +472,65 @@
     .field input[type="text"]:focus {
       border-color: var(--gold);
     }
+    .field textarea,
+    .field select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 14px;
+      border: 1.5px solid var(--grey-200);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--teal);
+      outline: none;
+      transition: border-color .2s;
+      background: var(--white);
+    }
+    .field textarea:focus,
+    .field select:focus {
+      border-color: var(--gold);
+    }
+    .field textarea { resize: vertical; min-height: 100px; }
+
+    /* ── Feedback list ── */
+    .feedback-entry {
+      padding: 12px 14px;
+      border: 1.5px solid var(--grey-200);
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+    .feedback-entry-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--grey-500);
+      margin-bottom: 6px;
+    }
+    .feedback-entry-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .feedback-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      background: var(--teal-lite);
+      color: var(--teal);
+    }
+    .feedback-tag.kind-bug { background: #fbe4e0; color: #a3401f; }
+    .feedback-tag.kind-idea { background: var(--gold-lite); color: var(--gold); }
+    .feedback-entry-msg {
+      font-size: 13px;
+      color: var(--teal);
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
 
     /* ── Photo slots ── */
     .photo-slots { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
@@ -921,6 +980,7 @@
   <button class="page-tab active" id="ptab-rv"   onclick="showPage('rv')">✈ Reiseverlauf Generator</button>
   <button class="page-tab"        id="ptab-conf" onclick="showPage('conf')">📋 Confirmation Generator</button>
   <button class="page-tab"        id="ptab-cal"  onclick="showPage('cal')">📅 Kalender</button>
+  <button class="page-tab"        id="ptab-feedback" onclick="showPage('feedback')">💬 Feedback</button>
 </div>
 
 <!-- ── Main ── -->
@@ -1570,6 +1630,75 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
 
 </div><!-- end conf-grid -->
 </div><!-- end page-cal -->
+
+<div class="page-panel" id="page-feedback">
+<div class="conf-grid">
+
+  <!-- Feedback form card -->
+  <div class="card conf-card">
+    <div class="card-header">
+      <h2>Feedback geben</h2>
+      <p>Bugs melden, Verbesserungsvorschläge oder allgemeines Feedback zum Tool</p>
+    </div>
+    <div class="card-body">
+      <form id="feedback-form">
+        <div class="field">
+          <label>Ihr Name (optional)</label>
+          <input type="text" id="fb-name" placeholder="z.B. Aarti"/>
+        </div>
+        <div class="field">
+          <label>Bereich</label>
+          <select id="fb-area">
+            <option value="">-- Bitte wählen --</option>
+            <option value="Reiseverlauf Generator">Reiseverlauf Generator</option>
+            <option value="Confirmation Generator">Confirmation Generator</option>
+            <option value="Kalender">Kalender</option>
+            <option value="DMC-Liste">DMC-Liste</option>
+            <option value="Referenzdatenbank">Referenzdatenbank</option>
+            <option value="Sonstiges">Sonstiges</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Art des Feedbacks</label>
+          <select id="fb-kind">
+            <option value="Feedback">Allgemeines Feedback</option>
+            <option value="Bug">Bug melden</option>
+            <option value="Idee">Verbesserungsvorschlag</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Nachricht</label>
+          <textarea id="fb-message" rows="6" placeholder="Was ist Ihnen aufgefallen? Je genauer die Beschreibung (z.B. welches Dokument, welcher Kunde), desto einfacher lässt es sich beheben."></textarea>
+        </div>
+
+        <button type="submit" class="btn-generate" id="fb-submit-btn">
+          <span id="fb-btn-icon">💬</span>
+          <span id="fb-btn-text">Feedback senden</span>
+        </button>
+
+        <div class="result-box" id="fb-result-box">
+          <div class="result-title" id="fb-result-title"></div>
+          <p id="fb-result-msg"></p>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Feedback list -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Bisheriges Feedback</h2>
+      <p>Alle bisher eingegangenen Rückmeldungen, neueste zuerst</p>
+    </div>
+    <div class="card-body">
+      <div id="fb-list">
+        <p style="font-size:13px;color:var(--grey-500);">Lädt…</p>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end conf-grid -->
+</div><!-- end page-feedback -->
 
 </main>
 
@@ -3139,6 +3268,98 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
       submitBtn.disabled = false;
       document.getElementById('cal-btn-text').textContent = 'Dokument analysieren';
       document.getElementById('cal-btn-icon').textContent = '🔍';
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  FEEDBACK TAB
+  // ══════════════════════════════════════════════════════════════
+
+  function fbEscapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, m => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]
+    ));
+  }
+
+  function fbKindClass(kind) {
+    if (kind === 'Bug') return 'kind-bug';
+    if (kind === 'Idee') return 'kind-idea';
+    return '';
+  }
+
+  function fbFormatTimestamp(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch(e) { return iso || ''; }
+  }
+
+  async function loadFeedback() {
+    const listEl = document.getElementById('fb-list');
+    try {
+      const r = await fetch('/api/feedback');
+      const entries = await r.json();
+      if (!entries.length) {
+        listEl.innerHTML = '<p style="font-size:13px;color:var(--grey-500);">Noch kein Feedback vorhanden.</p>';
+        return;
+      }
+      listEl.innerHTML = entries.map(e => `
+        <div class="feedback-entry">
+          <div class="feedback-entry-meta">
+            <span>${fbEscapeHtml(e.name) || 'Anonym'} · ${fbFormatTimestamp(e.timestamp)}</span>
+            <span class="feedback-entry-tags">
+              ${e.area ? `<span class="feedback-tag">${fbEscapeHtml(e.area)}</span>` : ''}
+              ${e.kind ? `<span class="feedback-tag ${fbKindClass(e.kind)}">${fbEscapeHtml(e.kind)}</span>` : ''}
+            </span>
+          </div>
+          <div class="feedback-entry-msg">${fbEscapeHtml(e.message)}</div>
+        </div>
+      `).join('');
+    } catch(e) {
+      listEl.innerHTML = '<p style="font-size:13px;color:var(--grey-500);">Feedback konnte nicht geladen werden.</p>';
+    }
+  }
+  loadFeedback();
+
+  document.getElementById('feedback-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const message = document.getElementById('fb-message').value.trim();
+    if (!message) { alert('Bitte eine Nachricht eingeben.'); return; }
+
+    const submitBtn = document.getElementById('fb-submit-btn');
+    const resultBox = document.getElementById('fb-result-box');
+    submitBtn.disabled = true;
+    document.getElementById('fb-btn-text').textContent = 'Wird gesendet…';
+    resultBox.style.display = 'none';
+
+    try {
+      const fd = new FormData();
+      fd.append('name', document.getElementById('fb-name').value.trim());
+      fd.append('area', document.getElementById('fb-area').value);
+      fd.append('kind', document.getElementById('fb-kind').value);
+      fd.append('message', message);
+
+      const res = await fetch('/api/feedback', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Server-Fehler');
+      }
+
+      document.getElementById('fb-result-box').className = 'result-box success';
+      document.getElementById('fb-result-title').textContent = '✅ Danke für Ihr Feedback!';
+      document.getElementById('fb-result-msg').textContent = 'Ihre Rückmeldung wurde gespeichert.';
+      resultBox.style.display = 'block';
+
+      document.getElementById('feedback-form').reset();
+      loadFeedback();
+    } catch(err) {
+      document.getElementById('fb-result-box').className = 'result-box error';
+      document.getElementById('fb-result-title').textContent = '❌ Fehler';
+      document.getElementById('fb-result-msg').textContent = err.message;
+      resultBox.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+      document.getElementById('fb-btn-text').textContent = 'Feedback senden';
     }
   });
 </script>
