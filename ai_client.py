@@ -19,6 +19,16 @@ ai_client = OpenAI(
     # "Analysiert…" with no way to tell a slow response from a dead one.
     # Structure/day-prose completions normally finish in well under this.
     timeout=90.0,
+    # The SDK already retries 429/5xx with backoff automatically — this just
+    # extends the budget beyond its default of 2. Observed directly this
+    # session: Gemini's free tier returns 503 "currently experiencing high
+    # demand" often enough that 2 attempts isn't always enough to ride out a
+    # brief spike, and every one of this app's ~10 call sites benefits from
+    # this in one place rather than each needing its own retry loop — a
+    # single day silently coming back with no text (and no visible error,
+    # if a caller happened to swallow the exception) was hard to tell apart
+    # from a genuine content problem.
+    max_retries=5,
 )
 AI_MODEL = "gemini-2.5-flash"
 

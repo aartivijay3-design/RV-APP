@@ -640,7 +640,13 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
     parts.append(
         f'<w:p><w:pPr><w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
     )
-    parts.append(label_line("Reisepreis (bei " + str(itinerary.get("pax", "")) + " Personen):", "EUR ____________ gesamt"))
+    # pax is legitimately None when the source document names no client/
+    # party size (see STRUCTURE_PROMPT's anti-hallucination rule) — that's
+    # not a missing key .get(..., "") would catch, so str() on it prints
+    # the literal word "None" here instead of a blank to fill in by hand.
+    pax_val = itinerary.get("pax")
+    pax_text = str(pax_val) if pax_val else "____"
+    parts.append(label_line(f"Reisepreis (bei {pax_text} Personen):", "EUR ____________ gesamt"))
     parts.append(
         f'<w:p><w:pPr><w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
     )

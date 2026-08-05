@@ -2228,6 +2228,26 @@ Tipp: Dokument öffnen → Strg+A → Strg+C → hier einfügen."
   // ══════════════════════════════════════════════════════════════════════
   async function buildDocx() {
     syncEdits();
+
+    // A day whose text generation failed (transient API error, rate
+    // limit, etc.) or was never generated at all leaves body_paragraphs
+    // empty — the backend silently prints "[Tagestext fehlt]" for it
+    // rather than failing the whole build, which is the right behavior
+    // for the build step itself, but meant a document with entire days
+    // missing could go out with nothing to catch it beforehand. Warn
+    // clearly, naming the affected days, before building.
+    const emptyDays = (currentStructure.days || [])
+      .filter(d => !(d.body_paragraphs || []).some(p => p.trim()))
+      .map(d => `Tag ${d.day_number ?? '?'} (${d.date || '?'})`);
+    if (emptyDays.length) {
+      const proceed = confirm(
+        `Achtung: Bei folgenden Tagen fehlt der Text noch:\n\n${emptyDays.join('\n')}\n\n` +
+        `Diese Tage würden im Word-Dokument als "[Tagestext fehlt]" erscheinen. ` +
+        `Trotzdem erstellen? (Abbrechen, um erst "Neu generieren" bei den betroffenen Tagen zu versuchen.)`
+      );
+      if (!proceed) return;
+    }
+
     const btn = document.getElementById('build-btn');
     btn.disabled = true;
     btn.textContent = '⏳ Wird erstellt…';
