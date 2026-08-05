@@ -612,7 +612,7 @@ def _bullet_item(text: str, num_id: str = "20") -> str:
 
 def _build_conf_body(rechnung: dict, dmcs, guide_name: str, guide_phone: str) -> str:
     """Build the <w:body> inner XML for the confirmation document."""
-    destination = rechnung.get("destination_en", rechnung.get("destination_de", "")).upper()
+    destination = (rechnung.get("destination_en") or rechnung.get("destination_de") or "").upper()
     start       = rechnung.get("travel_start", "")
     end         = rechnung.get("travel_end", "")
     hotels      = rechnung.get("hotels", [])

@@ -38,6 +38,22 @@ app = FastAPI(title="BAWA Reiseverlauf Generator")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    """Safety net for any exception a route doesn't already catch and wrap
+    in its own HTTPException (this doesn't touch those — FastAPI's built-in
+    HTTPException handling stays in effect for them; this only fires for
+    everything else). Without this, an unhandled exception falls through to
+    FastAPI's default error page, which isn't JSON — so the frontend's
+    `err.detail || 'Server-Fehler'` fallback has nothing to read and just
+    shows the generic message with zero information about what broke.
+    Every route should still catch what it can and raise a specific
+    HTTPException with a helpful message — this exists for whatever slips
+    through that, not as a replacement for it."""
+    print(f"[unhandled] {request.method} {request.url.path}: {exc}", flush=True)
+    return JSONResponse(status_code=500, content={"detail": f"Unerwarteter Fehler: {exc}"})
+
+
 # ── Optional HTTP Basic Auth gate ──────────────────────────────────────────
 # Off by default (normal LAN use). Set TUNNEL_AUTH_USER / TUNNEL_AUTH_PASS to
 # require a password on every request — needed whenever the app is reachable
@@ -196,7 +212,7 @@ async def extract_structure(
         highlights = ", ".join(
             b for day in structure.get("days", [])
             for b in day.get("overview_bullets", [])
-            if b.lower() not in ("transfer", "anreise", "abreise", "flug", "anreise / flug")
+            if b and b.lower() not in ("transfer", "anreise", "abreise", "flug", "anreise / flug")
         )
         structure["cover_subtitle"] = generate_cover_subtitle(destination, highlights)
 

@@ -225,7 +225,7 @@ def build_reiseubersicht_table(days: list, photo_rids: list = None) -> str:
         bullets = day.get("overview_bullets", [])
         if not bullets:
             return True
-        low = [b.strip().lower() for b in bullets]
+        low = [(b or "").strip().lower() for b in bullets]
         return all(b in ("transfer", "anreise", "anreise / flug", "abreise", "flug") for b in low)
 
     parts = []
@@ -317,6 +317,8 @@ def build_reiseubersicht_table(days: list, photo_rids: list = None) -> str:
                 f'<w:t>{x(location)}</w:t></w:r></w:p>'
             )
             for b in bullets:
+                if not b:
+                    continue
                 col2 += (
                     f'<w:p><w:pPr><w:spacing w:after="20"/>'
                     f'<w:ind w:left="160" w:hanging="160"/></w:pPr>'
@@ -537,7 +539,7 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
         bullets = day.get("overview_bullets", [])
         if not bullets:
             return True
-        low = [b.strip().lower() for b in bullets]
+        low = [(b or "").strip().lower() for b in bullets]
         return all(b in ("transfer", "anreise", "anreise / flug", "abreise", "flug") for b in low)
 
     all_days = itinerary.get("days", [])
