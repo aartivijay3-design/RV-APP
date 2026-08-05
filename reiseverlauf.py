@@ -1065,6 +1065,7 @@ Return ONLY valid JSON, no markdown, no explanation:
   "client_name": "Familie Grundler",
   "destination": "Japan",
   "start_date": "22.06.2026",
+  "expected_days": 11,
   "pax": 4,
   "leistungen": {
     "reiseteilnehmer": "Familie Grundler (4 Personen)",
@@ -1082,6 +1083,7 @@ Rules:
 - hotel_nights: one entry per hotel (not per day), with the correct total night count and exact room type.
 - special_experiences: only genuinely distinctive/bookable experiences explicitly named in the offer, not generic sightseeing.
 - start_date: the calendar date of Day 1 / arrival, DD.MM.YYYY. Some documents label days only "Day 01", "Day 02"... with no date anywhere near the day-by-day narrative itself — the real date is often only findable elsewhere in the document (a validity/pricing section, "Travelling Date:", a booking confirmation line). Search the WHOLE document for it; this is the one piece of context the day-by-day extraction step (which only sees small excerpts) can't find on its own, so getting it from here matters even when it feels like it belongs to a "pricing" section, not the itinerary. Return "" only if truly no date appears anywhere in the document.
+- expected_days: the trip's total length in calendar days, if the document states it anywhere as a number — "7 Days", "19 Nights / 20 Days" (→ 20), "8 Tage / 7 Nächte" (→ 8), a day-by-day list that visibly runs "Day 1" through "Day N" (→ N), etc. This is the ONE independent check against a day-by-day extraction step silently losing days partway through a long document (each excerpt only sees part of the document and has no way to know the true total) — a real, observed failure: a 7-day trip came back with only the first 4 days because the excerpt covering days 4-7 didn't produce anything and nothing caught it, since with no independent count "expected" just gets computed from whatever days a chunk actually returned, which cannot detect days it dropped. Return null only if the document truly never states a total length anywhere.
 - client_name, pax, and leistungen.reiseteilnehmer must come from an ACTUAL name/party-size stated somewhere in THIS document. Many DMC documents (generic activity templates, rate sheets meant for repeat use) name no client at all — in that case return client_name: "", pax: null, and OMIT leistungen.reiseteilnehmer entirely. Never fall back to the example above ("Familie Grundler") or invent any other name/count — the real client name is supplied separately by the person generating this document, and a wrong name on the cover page is worse than a blank one.
 """
 
@@ -1283,7 +1285,19 @@ def _call_ai_structure_chunked(dmc_content: str) -> dict:
 
     def _attempt():
         metadata = _run_metadata(dmc_content)
-        anchor_date = metadata.get("start_date", "")
+        # Some trips ("choose your own start date" templates) genuinely
+        # have no calendar date anywhere in the source — metadata correctly
+        # returns "" for those rather than inventing one. But every chunk
+        # still needs SOME consistent anchor to compute ordinal days
+        # ("Day Four") into real dates; without one, a chunk with no
+        # in-view date of its own has nothing to compute from at all,
+        # which is a real, observed cause of chunks producing nothing for
+        # their days. Falling back to a placeholder default (same pattern
+        # already used elsewhere for a genuinely dateless source) keeps
+        # every chunk's date math consistent — the placeholder gets edited
+        # by hand afterward regardless.
+        anchor_date = metadata.get("start_date") or "01.01.2026"
+        expected_days = metadata.get("expected_days")
         all_days = []
         for chunk in chunks:
             all_days.extend(_run_chunk_days(chunk, trip_start_date=anchor_date))
@@ -1322,7 +1336,7 @@ def _call_ai_structure_chunked(dmc_content: str) -> dict:
             except Exception:
                 pass
 
-        return result, _validate_structure(result, dmc_content, unresolved)
+        return result, _validate_structure(result, dmc_content, unresolved, expected_override=expected_days)
 
     result, v = _attempt()
 
@@ -1725,14 +1739,22 @@ def _merge_undifferentiated_days(days: list) -> list:
     return merged
 
 
-def _validate_structure(result: dict, dmc_content: str, unresolved: list = None) -> dict:
+def _validate_structure(result: dict, dmc_content: str, unresolved: list = None, expected_override: int = None) -> dict:
     """Cheap, deterministic checks against the result and the original
     source text — catches problems an AI call can introduce that a single
     "did the day count match" check misses:
 
-    - missing: fewer days than the trip's own start_date/end_date implies
-      (e.g. a multi-night stay described as one date-range block collapsed
-      into a single entry instead of being split per night).
+    - missing: fewer days than expected. Preferably expected_override — a
+      day count read from the document's own stated trip length (e.g. "7
+      Days"), independent of what the extraction actually returned. Without
+      it, expected falls back to computing from the result's own
+      start_date/end_date — which is blind to a chunk silently dropping the
+      tail end of the trip, since a truncated result's own date range looks
+      perfectly self-consistent (a real, observed failure: a 7-day trip's
+      last chunk produced nothing, and the result's own start/end dates
+      only spanned the 4 days that WERE found, so expected == actual == 4
+      and nothing flagged it — this is exactly what expected_override
+      exists to catch).
     - unresolved: day_marker couldn't be located anywhere in the source
       text (see _slice_activities_by_markers) — usually because the AI
       paraphrased it instead of copying it verbatim, or invented a marker
@@ -1762,13 +1784,18 @@ def _validate_structure(result: dict, dmc_content: str, unresolved: list = None)
       contiguous block.
     """
     days = result.get("days", [])
-    expected = _expected_day_count(result.get("start_date", ""), result.get("end_date", ""))
+    expected = expected_override or _expected_day_count(result.get("start_date", ""), result.get("end_date", ""))
     actual = len(days)
     missing = (expected - actual) if (expected and actual < expected) else 0
 
     unresolved = unresolved or []
 
-    content_lower = dmc_content.lower()
+    # Some PDFs hyphenate a word right at a line wrap (e.g. "Hampton by
+    # Hilton Ho-\ntel or similar") — real content, but it breaks a plain
+    # substring search since the name isn't contiguous in the extracted
+    # text anymore. Rejoining "-\n" before comparing fixes that without
+    # weakening the check for a genuinely fabricated hotel name.
+    content_lower = re.sub(r"-\s*\n\s*", "", dmc_content.lower())
     bad_hotels = []
     for d in days:
         name = ((d.get("hotel") or {}).get("name") or "").strip()
