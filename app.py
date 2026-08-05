@@ -1,7 +1,7 @@
 """
 BAWA Reiseverlauf Generator — FastAPI Backend
 Accepts DMC offers as Excel, Word, PDF, or image (JPG/PNG), or pasted text.
-Uses Google Gemini (free tier) for AI generation. Returns a branded Bawa .docx.
+Uses Google Gemini (via a paid Google AI Studio account) for AI generation. Returns a branded Bawa .docx.
 
 Split across modules: ai_client.py (Gemini client), extraction.py (file
 readers), reiseverlauf.py (itinerary generation), rechnung.py (Confirmation +

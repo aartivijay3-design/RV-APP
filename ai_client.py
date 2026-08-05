@@ -21,13 +21,14 @@ ai_client = OpenAI(
     timeout=90.0,
     # The SDK already retries 429/5xx with backoff automatically — this just
     # extends the budget beyond its default of 2. Observed directly this
-    # session: Gemini's free tier returns 503 "currently experiencing high
-    # demand" often enough that 2 attempts isn't always enough to ride out a
-    # brief spike, and every one of this app's ~10 call sites benefits from
-    # this in one place rather than each needing its own retry loop — a
-    # single day silently coming back with no text (and no visible error,
-    # if a caller happened to swallow the exception) was hard to tell apart
-    # from a genuine content problem.
+    # session: Gemini returns 503 "currently experiencing high demand" during
+    # brief spikes on Google's side — a shared-infrastructure thing that can
+    # hit any caller regardless of plan or billing, not a sign of hitting a
+    # quota. 2 attempts wasn't always enough to ride one out, and every one
+    # of this app's ~10 call sites benefits from the fix living here rather
+    # than needing its own retry loop — a single day silently coming back
+    # with no text (and no visible error, if a caller happened to swallow
+    # the exception) was hard to tell apart from a genuine content problem.
     max_retries=5,
 )
 AI_MODEL = "gemini-2.5-flash"
