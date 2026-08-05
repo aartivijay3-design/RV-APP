@@ -1641,7 +1641,7 @@ def _backfill_missing_hotels(days: list) -> None:
     for day in days:
         hotel = day.get("hotel")
         name = (hotel.get("name") or "").strip() if isinstance(hotel, dict) else ""
-        heading = day.get("location_heading", "")
+        heading = day.get("location_heading") or ""
         location = _strip_location_suffix(heading)
         is_departure = bool(re.search(r"/\s*Abreise\s*$", heading, re.IGNORECASE))
         if name:
@@ -1662,7 +1662,7 @@ def _clear_departure_day_hotels(days: list) -> None:
     regardless of where the hotel value came from.
     """
     for day in days:
-        heading = day.get("location_heading", "")
+        heading = day.get("location_heading") or ""
         if re.search(r"/\s*Abreise\s*$", heading, re.IGNORECASE):
             day["hotel"] = None
 
@@ -2265,7 +2265,7 @@ def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dic
     # BAWA documents just say "Genießen Sie die freie Zeit in {city}." and
     # stop there. Skipped if the user typed a manual override in the editor.
     if day.get("is_free_day") and not day_text_override.strip():
-        location = day.get("location_heading", "").strip()
+        location = (day.get("location_heading") or "").strip()
         line = f"Genießen Sie die freie Zeit in {location}." if location else "Genießen Sie die freie Zeit."
         paragraphs = [line]
         option_title = _extract_optional_excursion(day.get("activities_raw", ""))

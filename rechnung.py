@@ -694,8 +694,8 @@ def _build_conf_body(rechnung: dict, dmcs, guide_name: str, guide_phone: str) ->
         ]
 
         # ROOM cell — room type + meal + checkout/checkin notes
-        checkout_note = h.get("checkout_note", "").strip()
-        checkin_note  = h.get("checkin_note",  "").strip()
+        checkout_note = (h.get("checkout_note") or "").strip()
+        checkin_note  = (h.get("checkin_note")  or "").strip()
         room_paras = []
         if room:
             room_paras.append(_tbl_para(f"1 x {room}"))
