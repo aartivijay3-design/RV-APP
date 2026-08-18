@@ -800,9 +800,18 @@ def inject_into_template(body_xml: str, photos: list = None, destination: str = 
                     )
                     # Replace destination name in header1 (default header has country text)
                     if destination and item.filename.endswith("header1.xml"):
+                        # x() escapes &/</> — a destination like "Indien &
+                        # Bhutan" inserted raw produces invalid XML
+                        # (<w:t>INDIEN & BHUTAN</w:t>) that corrupts this
+                        # whole part, making the generated .docx fail to
+                        # open at all. Every other injection site in this
+                        # file already goes through x(); this one was
+                        # missed since it's a regex substitution, not an
+                        # f-string built alongside the others.
+                        dest_escaped = x(destination.upper())
                         hdr_xml = _re.sub(
                             r'(<w:t[^>]*>)[A-ZÄÖÜ][A-ZÄÖÜ\s&]{2,30}(</w:t>)',
-                            lambda m: m.group(1) + destination.upper() + m.group(2),
+                            lambda m: m.group(1) + dest_escaped + m.group(2),
                             hdr_xml
                         )
                     dst.writestr(item, hdr_xml.encode("utf-8"))
