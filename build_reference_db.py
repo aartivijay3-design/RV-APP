@@ -35,6 +35,25 @@ DAY_RE = re.compile(r"^tag\s*\d+", re.IGNORECASE)
 HOTEL_RE = re.compile(r"^übernachtung\s+(?:im|in|bei)\s+(.+)$", re.IGNORECASE)
 URL_RE = re.compile(r"^(https?://|www\.)", re.IGNORECASE)
 END_RE = re.compile(r"^ende der reise$", re.IGNORECASE)
+# Section headers introducing a bullet-style inclusions/exclusions list, not a
+# place name. The generic "short line, no terminal punctuation" heading rule
+# below would otherwise treat "Inkludierte Leistungen:" as a location heading
+# and file the whole list that follows as if it were sightseeing prose for
+# whatever place happened to be mentioned last — real corruption found in
+# reference_library.json: an old Baltikum sample's full inclusions list (city
+# tax, transfers, hotel nights, "Deutschsprachige Reiseleitung: in Litauen...")
+# got stored as a "sightseeing" paragraph and later verbatim-injected into an
+# unrelated day of a different Baltikum itinerary because a word in it
+# happened to match that day's activities. Everything from one of these
+# headers until the next day marker is skipped entirely instead.
+LEISTUNGEN_HEADING_RE = re.compile(
+    r"^(?:in|ex)?kludierte\s+leistungen\s*:?$"
+    r"|^leistungen\s*:?$"
+    r"|^optional\s*:?$"
+    r"|^nicht\s+(?:inkludiert|enthalten|eingeschlossen)\s*:?$"
+    r"|^ausgeschlossene\s+leistungen\s*:?$",
+    re.IGNORECASE,
+)
 # Running page headers/footers in PDFs (e.g. "JAPAN – RUNDREISE") and bare page numbers
 PAGE_NUMBER_RE = re.compile(r"^\d{1,4}$")
 RUNNING_HEADER_RE = re.compile(r"^[A-ZÄÖÜß][A-ZÄÖÜß\s\-–—]{3,60}$")
@@ -185,6 +204,7 @@ def parse_lines(lines, destination: str, source_file: str):
     entries = []
     location_heading = ""
     bucket = []  # unclassified body paragraphs since the last location heading
+    skip_section = False  # inside an "Inkludierte Leistungen"/"Optional" list
 
     def flush_as_sightseeing():
         for t in bucket:
@@ -206,10 +226,19 @@ def parse_lines(lines, destination: str, source_file: str):
 
         day_m = DAY_RE.match(text)
         if day_m:
+            skip_section = False
             flush_as_sightseeing()
             trailing = text[day_m.end():].strip(" -–—/\t")
             if trailing and len(trailing) <= 55:
                 location_heading = trailing
+            continue
+
+        if LEISTUNGEN_HEADING_RE.match(text):
+            flush_as_sightseeing()
+            skip_section = True
+            continue
+
+        if skip_section:
             continue
 
         m = HOTEL_RE.match(text)

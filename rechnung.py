@@ -525,7 +525,18 @@ CONF_TEMPLATE_PATH = Path("assets/conf_template.docx")
 
 
 def _xe(text: str) -> str:
-    """Escape text for XML."""
+    """Escape text for XML.
+
+    Every piece of dynamic text in the confirmation document passes through
+    here, so this is also where non-string values are made safe: None
+    renders as an empty string (never the literal word "None" in front of a
+    client), and numbers/other scalars are coerced rather than raising
+    AttributeError on .replace — the AI can return any of these as JSON
+    null or as a bare number.
+    """
+    if text is None:
+        return ""
+    text = str(text)
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
@@ -612,11 +623,15 @@ def _bullet_item(text: str, num_id: str = "20") -> str:
 
 def _build_conf_body(rechnung: dict, dmcs, guide_name: str, guide_phone: str) -> str:
     """Build the <w:body> inner XML for the confirmation document."""
+    # `or ""` rather than a .get default throughout: the AI returns an
+    # explicitly null field when it can't find a value, and .get(key,
+    # default) only substitutes for a MISSING key — a present-but-null value
+    # sails past it and crashes on the string/list operations below.
     destination = (rechnung.get("destination_en") or rechnung.get("destination_de") or "").upper()
-    start       = rechnung.get("travel_start", "")
-    end         = rechnung.get("travel_end", "")
-    hotels      = rechnung.get("hotels", [])
-    clients     = rechnung.get("client_names", [])
+    start       = rechnung.get("travel_start") or ""
+    end         = rechnung.get("travel_end") or ""
+    hotels      = rechnung.get("hotels") or []
+    clients     = [c for c in (rechnung.get("client_names") or []) if c]
 
     parts = []
 
@@ -660,12 +675,20 @@ def _build_conf_body(rechnung: dict, dmcs, guide_name: str, guide_phone: str) ->
     rows.append(header_row)
 
     for h in hotels:
-        ci   = h.get("check_in", "")
-        co   = h.get("check_out", "")
-        nts  = int(h.get("nights", 1))
-        name = h.get("hotel_name", "")
-        city = h.get("city", "")
-        room = h.get("room_type", "")
+        if not isinstance(h, dict):
+            continue
+        ci   = h.get("check_in") or ""
+        co   = h.get("check_out") or ""
+        # nights can come back null, blank, or as a string like "3" — int()
+        # raises TypeError on the first and ValueError on the second, which
+        # aborted the whole confirmation instead of just this one row.
+        try:
+            nts = int(h.get("nights") or 1)
+        except (TypeError, ValueError):
+            nts = 1
+        name = h.get("hotel_name") or ""
+        city = h.get("city") or ""
+        room = h.get("room_type") or ""
         # A boat/yacht charter has no meal-plan equivalent — the AI leaves
         # this genuinely blank rather than guessing "breakfast" for it, so
         # only fall back to the default when the field is truly missing.
@@ -734,14 +757,17 @@ def _build_conf_body(rechnung: dict, dmcs, guide_name: str, guide_phone: str) ->
     parts.append(_para_gold_bold("INCLUSIONS:"))
     parts.append(_blank())
 
-    parsed_inclusions = rechnung.get("inclusions", [])
+    parsed_inclusions = [i for i in (rechnung.get("inclusions") or []) if i is not None]
 
     if parsed_inclusions:
-        # Normalise: accept both old format (plain strings) and new format (dicts)
+        # Normalise: accept both old format (plain strings) and new format
+        # (dicts). Both accessors coerce to a real string — a dict whose
+        # "text"/"hotel" is explicitly null would otherwise reach .strip()
+        # below and raise AttributeError.
         def _inc_text(item):
-            return item.get("text", "") if isinstance(item, dict) else str(item)
+            return (item.get("text") or "") if isinstance(item, dict) else str(item)
         def _inc_hotel(item):
-            return item.get("hotel", "") if isinstance(item, dict) else ""
+            return (item.get("hotel") or "") if isinstance(item, dict) else ""
 
         # 1. General inclusions first (hotel == "")
         for item in parsed_inclusions:

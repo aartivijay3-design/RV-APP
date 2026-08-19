@@ -35,8 +35,16 @@ TEMPLATE_PATH = Path("assets/template.docx")
 # ── XML helpers ──────────────────────────────────────────────────────────────
 
 def x(text: str) -> str:
-    """XML-escape a string (handles &, <, >, keeps umlauts as UTF-8)."""
-    return escape(str(text))
+    """XML-escape a string (handles &, <, >, keeps umlauts as UTF-8).
+
+    None renders as an empty string, never the literal word "None". Any
+    field the AI may legitimately return as JSON null can reach here (a
+    trip with no stated party size, a stay with no named hotel), and
+    str(None) put the word "None" in front of clients — an observed bug
+    ("Reiseteilnehmer: None" on a real offer). A blank to fill in by hand
+    is always the better failure.
+    """
+    return "" if text is None else escape(str(text))
 
 RPR_TEAL = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:color w:val="0B3A43"/><w:sz w:val="22"/><w:szCs w:val="22"/>'
 RPR_TEAL_B = '<w:rFonts w:ascii="Inter" w:hAnsi="Inter"/><w:b/><w:color w:val="0B3A43"/><w:sz w:val="22"/><w:szCs w:val="22"/>'
@@ -289,7 +297,8 @@ def build_reiseubersicht_table(days: list, photo_rids: list = None) -> str:
                 # A merged multi-day block (see _merge_undifferentiated_days)
                 # — show the day/date range instead of a single weekday.
                 day_label  = f"Tag {day_num}–{day_num_end}"
-                date_label = f"{date_str} – {day.get('date_end', '')}"
+                # `or ""` — f-strings stringify None to "None" before x() runs.
+                date_label = f"{date_str} – {day.get('date_end') or ''}".strip(" –")
                 col1 = (
                     f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
                     f'<w:r><w:rPr>{rpr(bold=True)}</w:rPr>'
@@ -344,16 +353,17 @@ def build_reiseubersicht_table(days: list, photo_rids: list = None) -> str:
 
             if len(group) == 1:
                 day_label = f'Tag {first_num}'
-                date_label = first.get("date", "")
-                weekday_label = first.get("weekday", "")
+                date_label = first.get("date") or ""
+                weekday_label = first.get("weekday") or ""
             else:
                 day_label = f'Tag {first_num} – {last_num}'
-                date_label = f'{first.get("date", "")} – {last.get("date", "")}'
+                # `or ""` — f-strings stringify None to "None" before x() runs.
+                date_label = f'{first.get("date") or ""} – {last.get("date") or ""}'.strip(" –")
                 weekday_label = ""
 
             # Determine label from bullets or location
-            loc = first.get("location_heading", "")
-            bullets = first.get("overview_bullets", [])
+            loc = first.get("location_heading") or ""
+            bullets = first.get("overview_bullets") or []
             if bullets:
                 activity_label = bullets[0]
             elif loc:
@@ -494,6 +504,13 @@ def map_image_xml(rid: str = "rId11") -> str:
 # ── Document builder ─────────────────────────────────────────────────────────
 
 def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
+    # Every route that produces a Word file funnels through here — the AI
+    # path, and /build-docx handing back an itinerary the user edited in the
+    # browser (which can carry nulls the AI never produced, e.g. a day whose
+    # text was cleared, or a re-loaded saved draft). Normalizing the shape at
+    # this single choke point means no renderer below has to re-guard against
+    # a null list or a null item inside one. See _sanitize_structure.
+    itinerary = _sanitize_structure(dict(itinerary))
     parts = []
 
     # Cover page
@@ -502,9 +519,15 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
     # document), which must still show a generic placeholder, not a blank
     # cover page.
     client_display = itinerary.get("client_name") or "Familie"
-    date_line = f"{itinerary.get('start_date_formatted', '')} – {itinerary.get('end_date_formatted', '')}"
-    destination = itinerary.get("destination", "Destination")
-    subtitle = itinerary.get("cover_subtitle", "Eine Reise voller Eindrücke")
+    # f-string interpolation stringifies None to the literal "None" BEFORE
+    # x() ever sees it, so these need `or ""` rather than a .get default —
+    # a document whose dates weren't recognized showed "None – None" across
+    # the cover page.
+    _start_fmt = itinerary.get("start_date_formatted") or ""
+    _end_fmt = itinerary.get("end_date_formatted") or ""
+    date_line = f"{_start_fmt} – {_end_fmt}".strip(" –")
+    destination = itinerary.get("destination") or "Destination"
+    subtitle = itinerary.get("cover_subtitle") or "Eine Reise voller Eindrücke"
     parts.append(cover_page(client_display, date_line, destination, subtitle))
 
     # Landkarte + Reiseübersicht (cover page already ends with page break)
@@ -600,8 +623,15 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
                 if not already_in_body:
                     parts.append(body_para(hotel_desc))
                     parts.append(ep())
-            parts.append(hotel_line(hotel.get("name", "")))
-            parts.append(ep())
+            # hotel.name is "" (see STRUCTURE_PROMPT's anti-hallucination
+            # rule) when the DMC gives no real property name for this stay —
+            # only a generic overnight marker like "Ü in Vilnius". Nothing
+            # useful to print in that case, so skip the line rather than
+            # show either a blank "Übernachtung im" or that marker verbatim.
+            hotel_name = (hotel.get("name") or "").strip()
+            if hotel_name:
+                parts.append(hotel_line(hotel_name))
+                parts.append(ep())
 
         parts.append(ep())
         di += 1
@@ -627,7 +657,10 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
         f'<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5670"/></w:tabs>'
         f'<w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
     )
-    parts.append(label_line("Reiseteilnehmer:", l.get("reiseteilnehmer", client_display)))
+    # leistungen.reiseteilnehmer is legitimately absent/None when the source
+    # names no client (see STRUCTURE_PROMPT's anti-hallucination rule) — a
+    # missing-key-only .get(..., default) doesn't catch an explicit None.
+    parts.append(label_line("Reiseteilnehmer:", l.get("reiseteilnehmer") or client_display))
     parts.append(
         f'<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5670"/></w:tabs>'
         f'<w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
@@ -646,7 +679,7 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
     # the literal word "None" here instead of a blank to fill in by hand.
     pax_val = itinerary.get("pax")
     pax_text = str(pax_val) if pax_val else "____"
-    parts.append(label_line(f"Reisepreis (bei {pax_text} Personen):", "EUR ____________ gesamt"))
+    parts.append(label_line(f"Reisepreis (basierend auf {pax_text} Personen):", "EUR ____________ gesamt"))
     parts.append(
         f'<w:p><w:pPr><w:rPr>{RPR_TEAL}</w:rPr></w:pPr></w:p>'
     )
@@ -667,17 +700,22 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
     dest = itinerary.get("destination", "")
 
     # 1. Hotel nights first — one bullet per hotel
+    # Fields below can be explicitly None (not just missing) when the DMC
+    # source names no real property — e.g. a shorthand overnight marker like
+    # "Ü in Vilnius" instead of an actual hotel name (see STRUCTURE_PROMPT's
+    # hotel_nights rule) — so .get(key, default) alone doesn't catch it and
+    # printed the literal word "None" here.
     for h in l.get("hotel_nights", []):
-        nights = h.get("nights", "")
-        city   = h.get("city", "")
-        hotel  = h.get("hotel", "")
-        room   = h.get("room_type", "")
-        meal   = h.get("meal_plan", "Frühstück")
+        nights = h.get("nights") or ""
+        city   = h.get("city") or ""
+        hotel  = (h.get("hotel") or "").strip()
+        room   = h.get("room_type") or ""
+        meal   = h.get("meal_plan") or "Frühstück"
         link   = h.get("link", "")
         n_word = "Übernachtung" if nights == 1 else "Übernachtungen"
-        hotel_q = '„' + hotel + '“'
+        hotel_part = f' im „{hotel}“' if hotel else ""
         text   = (
-            f"{nights} {n_word} in {city} im {hotel_q}"
+            f"{nights} {n_word} in {city}{hotel_part}"
             + (f" in einem {room}" if room else "")
             + f" inklusive {meal}"
         )
@@ -1050,11 +1088,13 @@ Rules:
 - overview_bullets: 2-5 short German noun phrases per day. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
 - day_marker: a SHORT (8-15 words) EXACT, character-for-character excerpt copied verbatim from the very START of this day's section in the source document — the day's header line if there is one (e.g. "DAY SEVEN - MONDAY, 11 JAN 2027"), or the first distinctive sentence describing that day if there's no explicit header. This is used afterward to programmatically locate the day in the original text and slice out its real content, so precision matters more here than for any other field — copy it EXACTLY as it appears (capitalization, punctuation, spacing), never paraphrase, translate, reformat, or summarize it. Pick a phrase that is UNIQUE within the whole document — never a generic word/phrase that also occurs elsewhere ("Breakfast", "Overnight stay", a bare date that repeats). For a multi-night block with no day-by-day breakdown (see the days-array rule above), every expanded day within that same block shares the IDENTICAL day_marker pointing to where the block begins — do not invent different markers for days that have no distinct text of their own.
 - hotel.is_first_night = true only on first arrival at each hotel.
+- hotel.name must be the ACTUAL named property from the DMC (e.g. "Six Senses Kyoto"), never a generic overnight marker some DMC documents use in place of a real name ("Ü in Vilnius", "Overnight Riga", "Hotel TBD") — that marker is a placeholder, not a hotel name: in that case return name: "". Likewise return room_type: null and meal_plan: null when the DMC states none for that stay — never invent a plausible-looking value.
 - Weekdays in German. Dates: DD.MM.YYYY.
 - Meal plan: BB→Frühstück, HB→Halbpension, FB→Vollpension, AI→All-inclusive.
 - DO NOT write any body_paragraphs — structure and raw activities only.
 - is_free_day: true if the DMC gives no specific activity for the day (free/leisure/own arrangements). When true, set overview_bullets: ["Freizeit"]. The prose generator will insert the standard free-day line — do NOT write activities.
 - hotel_nights: one entry per hotel (not per day), with correct total nights count.
+- hotel_nights.hotel must be the ACTUAL named property from the DMC (e.g. "Six Senses Kyoto"). Some DMC documents give no real property name for a stay — only a generic overnight marker like "Ü in Vilnius", "Overnight Riga", "Hotel TBD" — that marker is a placeholder, not a hotel name: in that case return hotel: "". Likewise return room_type: null and meal_plan: null whenever the DMC states no room type / meal plan for that stay — never invent a plausible-looking value; a fabricated room type or meal plan is worse than a blank one, same reasoning as the client_name/pax rule below.
 - client_name: ALWAYS in German format "Familie [Nachname]" (e.g. Familie Schiff, Familie Grundler). Extract the family name and prefix with "Familie". Never use English ("The X family" or "X Family"). If group name, keep it as-is but in German.
 - client_name, pax, and leistungen.reiseteilnehmer must come from an ACTUAL name/party-size stated somewhere in THIS document (a cover sheet, "prepared for", a pax count). Many DMC documents (generic activity templates, rate sheets meant for repeat use) name no client at all — in that case return client_name: "", pax: null, and OMIT leistungen.reiseteilnehmer entirely. Never fall back to the example above ("Familie Grundler") or invent any other name/count — the real client name is supplied separately by the person generating this document, and a wrong name on the cover page is worse than a blank one.
 """
@@ -1090,6 +1130,7 @@ Rules:
 - client_name: ALWAYS "Familie [Nachname]" in German (e.g. "Familie Schiff"). Never English ("The X family").
 - destination: the country/region in German, e.g. "Japan", "Vietnam und Singapur".
 - hotel_nights: one entry per hotel (not per day), with the correct total night count and exact room type.
+- hotel_nights.hotel must be the ACTUAL named property from the DMC. Some DMC documents give no real property name for a stay — only a generic overnight marker like "Ü in Vilnius", "Overnight Riga", "Hotel TBD" — that marker is a placeholder, not a hotel name: in that case return hotel: "". Likewise return room_type: null and meal_plan: null whenever the DMC states no room type / meal plan for that stay — never invent a plausible-looking value.
 - special_experiences: only genuinely distinctive/bookable experiences explicitly named in the offer, not generic sightseeing.
 - start_date: the calendar date of Day 1 / arrival, DD.MM.YYYY. Some documents label days only "Day 01", "Day 02"... with no date anywhere near the day-by-day narrative itself — the real date is often only findable elsewhere in the document (a validity/pricing section, "Travelling Date:", a booking confirmation line). Search the WHOLE document for it; this is the one piece of context the day-by-day extraction step (which only sees small excerpts) can't find on its own, so getting it from here matters even when it feels like it belongs to a "pricing" section, not the itinerary. Return "" only if truly no date appears anywhere in the document.
 - expected_days: the trip's total length in calendar days, if the document states it anywhere as a number — "7 Days", "19 Nights / 20 Days" (→ 20), "8 Tage / 7 Nächte" (→ 8), a day-by-day list that visibly runs "Day 1" through "Day N" (→ N), etc. This is the ONE independent check against a day-by-day extraction step silently losing days partway through a long document (each excerpt only sees part of the document and has no way to know the true total) — a real, observed failure: a 7-day trip came back with only the first 4 days because the excerpt covering days 4-7 didn't produce anything and nothing caught it, since with no independent count "expected" just gets computed from whatever days a chunk actually returned, which cannot detect days it dropped. Return null only if the document truly never states a total length anywhere.
@@ -1127,6 +1168,7 @@ Rules:
 - overview_bullets: 2-5 short German noun phrases. Transfer/arrival only days: ["Transfer"] or ["Anreise / Flug"].
 - day_marker: a SHORT (8-15 words) EXACT, character-for-character excerpt copied verbatim from the very START of this day's section — the day's header line if there is one, or the first distinctive sentence if not. Used afterward to locate the day in the original text and slice its real content, so precision matters more here than for any other field — never paraphrase, translate, reformat, or summarize it. Pick a phrase UNIQUE within the document — not a generic word/phrase that also occurs elsewhere. Every expanded day within an undifferentiated multi-night block shares the IDENTICAL day_marker pointing to where that block begins.
 - hotel.is_first_night = true only on first arrival at each hotel (within what's visible in this excerpt — a day continuing an already-established hotel stay from before this excerpt should still be false).
+- hotel.name must be the ACTUAL named property from the DMC, never a generic overnight marker some DMC documents use in place of a real name ("Ü in Vilnius", "Overnight Riga", "Hotel TBD") — that marker is a placeholder, not a hotel name: in that case return name: "". Likewise return room_type: null and meal_plan: null when the DMC states none for that stay — never invent a plausible-looking value.
 - Weekdays in German. Meal plan: BB→Frühstück, HB→Halbpension, FB→Vollpension, AI→All-inclusive.
 - Do NOT write body_paragraphs, client_name, destination, or any trip-level field — days only.
 """
@@ -1191,7 +1233,13 @@ def _run_chunk_days(chunk_text: str, trip_start_date: str = "") -> list:
                 parsed = json.loads(raw, strict=False)
             except json.JSONDecodeError:
                 parsed = json.loads(_repair_truncated_json(raw), strict=False)
-            return parsed.get("days", [])
+            # The model occasionally returns the days array directly instead
+            # of wrapping it in {"days": [...]}. That used to raise
+            # AttributeError on .get and get swallowed by the retry handler
+            # below, silently dropping every day in the chunk — accept both
+            # shapes rather than losing real days to a formatting quirk.
+            days = parsed if isinstance(parsed, list) else parsed.get("days", [])
+            return [d for d in days if isinstance(d, dict)]
         except Exception as e:
             if attempt == 0:
                 print(f"[structure-chunk] WARNING — a chunk failed, retrying once: {e}", flush=True)
@@ -1368,6 +1416,7 @@ def _call_ai_structure_chunked(dmc_content: str) -> dict:
     if v["missing"] or v["unresolved"] or v["bad_hotels"]:
         print(f"[structure-chunk] WARNING — issues remain after retry: {v}", flush=True)
 
+    _sanitize_structure(result)
     _backfill_missing_hotels(result.get("days", []))
     _clear_departure_day_hotels(result.get("days", []))
     result["days"] = _merge_undifferentiated_days(result.get("days", []))
@@ -1641,6 +1690,77 @@ def _slice_activities_by_markers(days: list, dmc_content: str) -> list:
         i = run_end + 1
 
     return unresolved
+
+
+# Fields the AI returns as a JSON list, which every downstream renderer
+# iterates over and calls string methods on.
+_DAY_LIST_FIELDS = ("overview_bullets", "body_paragraphs")
+_LEISTUNGEN_LIST_FIELDS = ("special_experiences", "hotel_nights")
+# Scalar day fields the renderers read with direct day["..."] indexing, which
+# raises KeyError (not a blank) when absent. A day added by hand in the editor
+# ("+ Tag hinzufügen") or a partially-filled day from a reloaded draft can be
+# missing any of them — an observed 500 on /build-docx was exactly this.
+_DAY_SCALAR_FIELDS = ("day_number", "weekday", "date", "location_heading")
+
+
+def _sanitize_structure(result: dict) -> dict:
+    """Normalizes an AI-produced structure so downstream rendering can trust
+    its shape.
+
+    JSON `null` and a missing key are different things, and `.get(key,
+    default)` only substitutes the default for the SECOND one — so a field
+    the model explicitly returned as null sails straight past every
+    `.get("body_paragraphs", [])` guard in the codebase and reaches a
+    `for p in None` or `None.strip()`. That is a real, repeatedly-observed
+    crash source here (it produced the generic "Server-Fehler" users
+    reported), and it recurs because the guard *looks* correct at every
+    individual call site.
+
+    Rather than patch each site defensively — easy to miss one, and the next
+    new renderer starts the cycle over — the shape is fixed once, here,
+    immediately after parsing: null lists become empty lists, and null/
+    non-string items inside those lists are dropped. Callers downstream can
+    then rely on "list of real strings" holding.
+
+    Deliberately does NOT invent content: a null hotel or a null client name
+    stays null (those are meaningful — see the prompts' anti-hallucination
+    rules); only the container shape is corrected.
+    """
+    days = result.get("days")
+    if not isinstance(days, list):
+        days = []
+    result["days"] = [d for d in days if isinstance(d, dict)]
+
+    for day in result["days"]:
+        for field in _DAY_SCALAR_FIELDS:
+            if day.get(field) is None:
+                day[field] = ""
+        for field in _DAY_LIST_FIELDS:
+            value = day.get(field)
+            if not isinstance(value, list):
+                day[field] = [] if value is None else value
+                continue
+            day[field] = [item for item in value if isinstance(item, str) and item.strip()]
+        # hotel is legitimately None (hotel-less days), but a non-dict truthy
+        # value would break every hotel.get(...) call downstream.
+        if day.get("hotel") is not None and not isinstance(day.get("hotel"), dict):
+            day["hotel"] = None
+
+    leistungen = result.get("leistungen")
+    if not isinstance(leistungen, dict):
+        leistungen = {}
+    result["leistungen"] = leistungen
+    for field in _LEISTUNGEN_LIST_FIELDS:
+        value = leistungen.get(field)
+        if not isinstance(value, list):
+            leistungen[field] = []
+            continue
+        if field == "hotel_nights":
+            leistungen[field] = [item for item in value if isinstance(item, dict)]
+        else:
+            leistungen[field] = [item for item in value if isinstance(item, str) and item.strip()]
+
+    return result
 
 
 def _strip_location_suffix(location: str) -> str:
@@ -2032,6 +2152,7 @@ def _call_ai_structure_single(dmc_content: str) -> dict:
         if v["missing"] or v["unresolved"] or v["bad_hotels"] or stalled or v["low_coverage"]:
             print(f"[structure] WARNING — issues remain after retry: {v}", flush=True)
 
+    _sanitize_structure(result)
     _backfill_missing_hotels(result.get("days", []))
     _clear_departure_day_hotels(result.get("days", []))
     result["days"] = _merge_undifferentiated_days(result.get("days", []))
@@ -2185,8 +2306,12 @@ def _build_sight_mapping_prompt(mapping: list) -> tuple:
             )
         elif m["semantic_text"]:
             lines.append(
-                f"- {m['bullet']}: ähnlicher BAWA-Text als Stil-Vorbild (Ton/Wortwahl übernehmen, "
-                f"NICHT wörtlich kopieren, keine abweichenden Fakten erfinden):\n  {m['semantic_text']}"
+                f"- {m['bullet']}: NUR Stil-Vorbild — dieser Text stammt aus einer ANDEREN Reise und "
+                f"beschreibt möglicherweise einen ganz anderen Ort, ein anderes Restaurant oder eine "
+                f"andere Stadt. Übernimm ausschließlich Ton, Satzrhythmus und Wortwahl. Übernimm "
+                f"KEINERLEI Inhalte daraus: keine Eigennamen, Restaurants, Personen, Hotels, "
+                f"Auszeichnungen, Orte oder Zahlen. Schreibe den Absatz inhaltlich vollständig aus "
+                f"dem oben genannten Programmpunkt und deinem eigenen Wissen:\n  {m['semantic_text']}"
             )
         else:
             lines.append(
@@ -2324,10 +2449,18 @@ def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dic
     hotel = day.get("hotel") or {}
     is_first_night = hotel.get("is_first_night", False)
 
+    # /generate-day receives a day straight from the editor, which can be one
+    # the user added by hand and hasn't filled in yet — direct day["..."]
+    # indexing raises KeyError on those, so read every field defensively.
+    _day_num = day.get("day_number") or ""
+    _date = day.get("date") or ""
+    _weekday = day.get("weekday") or ""
+    _loc = day.get("location_heading") or ""
+
     day_number_end = day.get("day_number_end")
     if day_number_end:
         day_line = (
-            f"Days {day['day_number']}–{day_number_end}: {day['date']} – {day.get('date_end', '')}\n"
+            f"Days {_day_num}–{day_number_end}: {_date} – {day.get('date_end') or ''}\n"
             f"NOTE: this is a MULTI-DAY BLOCK, not a single day — the source document describes "
             f"this whole date range as one undifferentiated stretch with no fixed day-by-day "
             f"schedule (e.g. a menu of optional activities guests choose from during their stay). "
@@ -2336,21 +2469,24 @@ def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dic
             f"it all happens in one day). Make clear the exact daily order is arranged on-site.\n"
         )
     else:
-        day_line = f"Day {day['day_number']}: {day['weekday']}, {day['date']}\n"
+        day_line = f"Day {_day_num}: {_weekday}, {_date}\n"
 
     user_msg = (
         f"Destination: {destination}\n"
         f"{day_line}"
-        f"Location: {day['location_heading']}\n"
+        f"Location: {_loc}\n"
         f"Activities (English source): {activities}\n"
-        f"Hotel: {hotel.get('name', 'none')} — is_first_night: {is_first_night}\n"
-        f"Room: {hotel.get('room_type', '')}, Meal plan: {hotel.get('meal_plan', '')}\n"
+        # `or` rather than a .get default — an explicit null would otherwise
+        # reach the model as the literal string "None", which it can echo
+        # straight back into the client-facing prose.
+        f"Hotel: {hotel.get('name') or 'none'} — is_first_night: {is_first_night}\n"
+        f"Room: {hotel.get('room_type') or ''}, Meal plan: {hotel.get('meal_plan') or ''}\n"
     )
 
     ref_hotel_name = hotel.get("name", "") if is_first_night else ""
     hotel_ref = reference_db.find_hotel_reference(destination, ref_hotel_name) if ref_hotel_name else None
 
-    mapping = _map_bullets_to_references(destination, day.get("location_heading", ""), day.get("overview_bullets", []))
+    mapping = _map_bullets_to_references(destination, _loc, day.get("overview_bullets") or [])
     sight_block, exact_matches = _build_sight_mapping_prompt(mapping)
 
     if hotel_ref or sight_block:
@@ -2393,9 +2529,25 @@ def call_ai_day(day: dict, destination: str, day_text_override: str = "") -> dic
         except json.JSONDecodeError:
             parsed = json.loads(_repair_truncated_json(raw), strict=False)
 
+        # Normalize the shape before anything downstream touches it. Valid
+        # JSON is not necessarily the shape we asked for — a truncated or
+        # off-format response can parse into a list, or into an object whose
+        # body_paragraphs is null or holds nulls, and every consumer below
+        # (placeholder substitution, bullet checking, guide-terminology
+        # rewriting) assumes a list of real strings.
+        if not isinstance(parsed, dict):
+            parsed = {}
+        paragraphs = parsed.get("body_paragraphs")
+        parsed["body_paragraphs"] = (
+            [p for p in paragraphs if isinstance(p, str) and p.strip()]
+            if isinstance(paragraphs, list) else []
+        )
+        if not isinstance(parsed.get("hotel_description"), str):
+            parsed["hotel_description"] = ""
+
         if exact_matches:
             parsed["body_paragraphs"] = _substitute_sight_placeholders(
-                parsed.get("body_paragraphs", []), exact_matches
+                parsed["body_paragraphs"], exact_matches
             )
         return parsed
 

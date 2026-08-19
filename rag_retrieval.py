@@ -90,12 +90,33 @@ def _entry_to_query_text(entry: dict) -> str:
     return " | ".join(p for p in parts if p)
 
 
+# Cosine similarity below which a "match" is treated as no match at all.
+#
+# Travel prose embeds into a narrow band — every entry in the corpus is
+# topically "a German paragraph about sightseeing", so even completely
+# unrelated pairs score high. Measured against a real Baltikum itinerary:
+# "Besuch der Tori Cider Farm" (Estonia) matched a Riga farmers-market
+# paragraph at 0.675, and "Rückflug" matched a hotel description at 0.688 —
+# while the one genuinely correct match in the whole trip ("Mittagessen im
+# Restaurant Lore Bistro" → the stored Lore Bistro line) scored 0.898. A
+# threshold anywhere below ~0.85 therefore admits mostly noise.
+#
+# Deliberately biased toward returning nothing: a dropped style reference
+# just means the model writes the paragraph from its own knowledge (which
+# the prompt already handles), whereas a wrong one puts another trip's
+# facts into a client-facing document — the failure this threshold exists
+# to prevent (an unrelated Riga restaurant description appeared in a
+# Tallinn day this way).
+MIN_SEMANTIC_SCORE = 0.85
+
+
 def retrieve(
     query: str,
     destination: str = "",
     top_k: int = 6,
     german_only: bool = True,
     min_text_len: int = 60,
+    min_score: float = MIN_SEMANTIC_SCORE,
 ) -> list[dict]:
     """
     Find the most relevant reference entries for a query.
@@ -107,9 +128,12 @@ def retrieve(
         top_k:        Number of results to return.
         german_only:  If True, only return entries with language == "de".
         min_text_len: Discard entries whose text is shorter than this (noise).
+        min_score:    Minimum cosine similarity to count as a match at all
+                      (see MIN_SEMANTIC_SCORE). Pass 0.0 to disable.
 
     Returns:
-        List of entry dicts, ordered by relevance (most relevant first).
+        List of entry dicts, ordered by relevance (most relevant first), each
+        with its similarity in "score". Empty if nothing clears min_score.
     """
     _load()
 
@@ -142,13 +166,21 @@ def retrieve(
     scores = candidate_embeddings @ q_vec                   # cosine similarity
 
     # ── Top-k ─────────────────────────────────────────────────────────────────
+    # Always sort by score — the small-candidate-set path used to return
+    # entries in corpus order, so the "most relevant first" contract silently
+    # didn't hold for narrow destinations and callers taking results[0] got an
+    # arbitrary entry rather than the best one.
     if len(scores) <= top_k:
-        top_indices = list(range(len(scores)))
+        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
     else:
         top_indices = np.argpartition(scores, -top_k)[-top_k:]
         top_indices = sorted(top_indices, key=lambda i: scores[i], reverse=True)
 
-    return [candidates[i] for i in top_indices]
+    return [
+        {**candidates[i], "score": float(scores[i])}
+        for i in top_indices
+        if scores[i] >= min_score
+    ]
 
 
 def retrieve_for_day(

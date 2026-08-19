@@ -3,9 +3,9 @@
   "source_root": "C:\\Users\\AartiVijay\\OneDrive - BAWA Tours&Travel GmbH\\BAWA - Bawa\\KUNDEN\\Muster\\Musterreiseverläufe",
   "source_file_count": 97,
   "stats": {
-    "total_entries": 3493,
-    "hotel_entries": 204,
-    "sightseeing_entries": 3289,
+    "total_entries": 3431,
+    "hotel_entries": 270,
+    "sightseeing_entries": 3161,
     "destinations": [
       "Bali",
       "Baltikum",
@@ -31,6 +31,7 @@
       "Nepal",
       "Norwegen",
       "Oman",
+      "Saariselkä, Finnland",
       "Schottland",
       "Sikkhim & Darjeeling - Indien",
       "Singapur & Bali",
@@ -953,62 +954,6 @@
       "type": "sightseeing",
       "destination": "Island",
       "source_file": "Island Musterverlauf I 9ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen nahe Selfoss im „Hotel Grimsborgir“ in einem Superior Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf I 9ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Hotel Kria“ in einem Doppelzimmer inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf I 9ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Fosshotel Glacier Lagoon“ in einem Doppelzimmer inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf I 9ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Lake Hotel“ in einem Lake View Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf I 9ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Icelandair Hotel Myvatn“ in einem Doppelzimmer inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf I 9ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Reykjavik im „Hotel Konsulat“ in einem Doppelzimmer inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf I 9ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen an der Blauen Lagune „The Retreat“ in einer Junior Suite inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf I 9ÜN.docx",
       "location_heading": "Pflegeprodukte von Blue Lagoon",
       "text": "Minibar im Zimmer mit alkoholfreien Getränken, Bier und Wein",
       "language": "de"
@@ -1233,46 +1178,6 @@
       "type": "sightseeing",
       "destination": "Island",
       "source_file": "Island Musterverlauf II 6ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Reykjavik im „Konsulat Hotel“ in 2x Double Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II 6ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Hotel Husafell“ in 2x Deluxe Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II 6ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung nahe Selfoss im „Hotel Grimsborgir“ in 2x Superior Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II 6ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen an der Südküste im „Skalakot Hotel“ in 2x Grand Delux Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II 6ÜN.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „The Retreat Blue Lagoon“ in 2x Junior Suite inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II 6ÜN.docx",
       "location_heading": "Private Airport Transfers mit englischsprachigem Fahrer",
       "text": "Privates Reiseprogramm gemäß Reiseverlauf mit eigenem Fahrzeug und englischsprachigem Fahrer-Guide; inklusive Eintrittsgebühren und Mittagessen (exkl. Getränke; Tag 2-7)",
       "language": "de"
@@ -1475,46 +1380,6 @@
       "source_file": "Island Musterverlauf II ohne The Retreat.docx",
       "location_heading": "1. Übernachtung im Silica Hotel",
       "text": "Link zu diesem Hotel: https://www.bluelagoon.com/accommodation/retreat-hotel",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II ohne The Retreat.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Reykjavik im „Konsulat Hotel“ in einem Double Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II ohne The Retreat.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Hotel Husafell“ in einem Deluxe Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II ohne The Retreat.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung nahe Selfoss im „Hotel Grimsborgir“ in einem Superior Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II ohne The Retreat.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen an der Südküste im „Skalakot Hotel“ in einem Grand Deluxe Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterverlauf II ohne The Retreat.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Silica Hotel“ in eine Mountain Deluxe inklusive Frühstück",
       "language": "de"
     },
     {
@@ -2513,22 +2378,6 @@
       "type": "sightseeing",
       "destination": "Kambodscha",
       "source_file": "Kambodscha.docx",
-      "location_heading": "Optional:",
-      "text": "Die heutige Tour beginnt mit einem 30-minütigen Helikopterflug bis nach Koh Ker, das 110km von Siem Reap entfernt liegt. Auf dem Flug sehen Sie die atemberaubende ländliche kambodschanische Landschaft und die lokalen Dörfer. Koh Ker war einst eine alte Hauptstadt Kambodschas und wurde vom König Jayarvaraman IV. erbaut. Der Tempel Prasat Thom ist 35 Meter hoch und ähnelt einem siebenstufigen Stupa, einzigartig in den Tempeln von Angkor.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Kambodscha",
-      "source_file": "Kambodscha.docx",
-      "location_heading": "Optional:",
-      "text": "Danach fliegen Sie in einem 20-minütigen Helikopterflug weiter zum Dschungeltempel von Beng Mealea. Genießen Sie einen kurzen Spaziergang durch den dichten Dschungel und entdecken Sie einen versteckten Tempel. Seit Jahrhunderten unentdeckt ist Beng Mealea einer der wenigen Tempel, die eine ‚Indiana Jones‘ Entdeckungserfahrung bieten. Anschließend Rückflug nach Siem Reap (20 Minuten).",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Kambodscha",
-      "source_file": "Kambodscha.docx",
       "location_heading": "Siem Reap – Phnom Penh",
       "text": "Am frühen Nachmittag privater Transfer zum Flughafen und Weiterflug nach Phnom Penh. Bei Ankunft in Phnom Penh erwartet Sie Ihr Reiseleiter am Flughafen und bringt Sie in Ihr Hotel. Der restliche Tag steht Ihnen bis zum Abendausflug zur freien Verfügung.",
       "language": "de"
@@ -2923,22 +2772,6 @@
       "source_file": "Kanada Musterreiseverlauf_AMEX_CraftedJourney_Kanada 14.07.2015.docx",
       "location_heading": "Flugpreis Silvia,Jonathan,Johann Lafer: € xxx",
       "text": "Die Flugpreise werden tagesaktuell ermittelt. Wir empfehlen eine baldige Buchung.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Kanada",
-      "source_file": "Kanada Musterreiseverlauf_AMEX_CraftedJourney_Kanada 14.07.2015.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Flug mit Thai Airways ab/bis Frankfurt in First Class (bzw. Economy Class) inklusive Steuern und Gebühren (Flugpreis ist separat ausgewiesen)",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Kanada",
-      "source_file": "Kanada Musterreiseverlauf_AMEX_CraftedJourney_Kanada 14.07.2015.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "4 Übernachtungen in Nusa Dua im „The Balé“ in 1x Pavilion inklusive:",
       "language": "de"
     },
     {
@@ -5651,38 +5484,6 @@
       "source_file": "Baltikum mit Kuhrische Nehrung.pdf",
       "location_heading": "Tallin – Heimreise",
       "text": "Zu gegebener Zeit erwartet Sie ihr Fahrer um Sie und Ihr Gepäck sicher und schnell zum Flughafen zu chauffieren.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Baltikum",
-      "source_file": "Baltikum mit Kuhrische Nehrung.pdf",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": " Private Flughafentransfers Transfers in einem PKW mit englischsprachigem Fahrer (MB S-Klasse, oder V-Klasse) ab/bis Flughafen  2 Übernachtungen in Vilnius im PACAI in Superior Room inkl. Frühstück  2 Übernachtungen in Klaipeda im Victoria Hotel Klaipėda in Business Claas Room inklusive Frühstück  2 Übernachtungen in Riga im Grand Hotel Kempinski Riga in Opera Deluxe Room inkl. Frühstück  1 Übernachtung im Hotel Antonius Tartu in Deluxe Room inkl. Frühstück inklusive Frühstück  2 Übernachtungen in Tallinn im Telegraaf Hotel in Executive Room inkl.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Baltikum",
-      "source_file": "Baltikum mit Kuhrische Nehrung.pdf",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Frühstück  City Tax in Vilnius, Klaipeda und Riga  2 x Verkostung und Mittagessen: Bier in Valmiermuiza und Wein im NP Lahemaa  Besichtigungen/Führungen gemäß Programm inkl. folgender Eitrittsgelder: Burg Trakai, Thomas Mann-Haus, Schloss und Garten Rundale, Jugendstilmuseum Riga, Bischofsburg Turaida m NP Gauja, Wasserflughafen oder Kunstmuseum KUMU  Begegnungen mit einem Chefkoch in Riga und einer Winzerfamilie im NP Lahemaa  Private Yachtfahrt in Trakai mit Sekt, Kanalfahrt in Riga, Fahrt mit der Schwebebahn im NP Gauja  Deutschsprachige Reiseleitung: in Litauen – litauische Reiseleitung, in Lettland – lettische Reiseleitung, in Estland – estnische Reiseleitung  Fährüberfahrt und ökologische Abgabe zur Kurischen Nehrung  Örtliche Ansprechpartner/Agentur in deutscher Sprache, Reservierungen Restaurants, etc.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Baltikum",
-      "source_file": "Baltikum mit Kuhrische Nehrung.pdf",
-      "location_heading": "Optional:",
-      "text": " Privates Konzert und Begegnung mit dem Pianisten (nach Möglichkeit Rokas Zubovas)  Heißluftballonfahrt über Vilnius bzw. Trakai  Abschiedsabendessen (stand 2025):",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Baltikum",
-      "source_file": "Baltikum mit Kuhrische Nehrung.pdf",
-      "location_heading": "Optional:",
-      "text": "o Rest. 180 Degree, Degustation-Menü o Rest. Noah, Degustation-Menü (Bezahlung über BAWA, weil wir garantieren müssen).",
       "language": "de"
     },
     {
@@ -10921,46 +10722,6 @@
       "type": "sightseeing",
       "destination": "Island",
       "source_file": "Island mit Kinder Driver Guide März.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "3 Übernachtungen im „Skalakot Hotel“ in einer 1x Master Suite und 2x Standard Single Rooms (komplettes 3 OG für Familie Trettenbrein) inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island mit Kinder Driver Guide März.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "4 Übernachtungen in Reykjavik im „Hotel Konsulat“ in 1x Deluxe Room mit Sofabett und 1x Deluxe Room (nebeneinander) inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island mit Kinder Driver Guide März.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Privater Driver Guide mit einem Mercedes Benz V Class oder ähnliches, 22. – 26. März 2024",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island mit Kinder Driver Guide März.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Schneemobil Tour Eyjafjallajokull Glacier, in einer Gruppe, Dauer ca. 2-3 Std.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island mit Kinder Driver Guide März.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Inklusive: Isolierter Overall, Helm, Sturmhaube für Schneemobile, Gesichtsmaske",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island mit Kinder Driver Guide März.docx",
       "location_heading": "Reiten, privat, Dauer ca. 1 Std",
       "text": "Inklusive: Transport in einem Super-Jeep, 45-60 Minuten im Gletschereishöhlengebiet, alle notwendige Sicherheitsausrüstung (Helm, Stirnlampe und Steigeisen).",
       "language": "de"
@@ -11187,54 +10948,6 @@
       "source_file": "Island Muster April.docx",
       "location_heading": "Blue Lagoon",
       "text": "19:00 Uhr Tischreservierung im Moss Restaurant (zahlbar vor Ort)",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Muster April.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen nahe Selfoss im „Hotel Grimsborgir“ in einem Two Bedroom Apartment inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Muster April.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Hotel Kria“ in 2 x Double Room with Mountain View inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Muster April.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Fosshotel Glacier Lagoon“ in 2 x Ocean View Double Room inklusive Frühstück und Spa Zugang",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Muster April.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Lake Hotel Egilsstadir“ in 2 x Superior Room with Lake View inklusive Frühstück und Spa Zugang",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Muster April.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Fosshotel Myvatn“ in 2 x Lake View Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Muster April.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen an der Blauen Lagune „The Retreat“ in 2 x Moss Junior Suite inklusive Frühstück",
       "language": "de"
     },
     {
@@ -12641,54 +12354,6 @@
       "type": "sightseeing",
       "destination": "Island",
       "source_file": "Island Musterr April mit der empfohlenen Route.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen nahe Selfoss im „Hotel Grimsborgir“ in einem Two Bedroom Apartment inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterr April mit der empfohlenen Route.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Hotel Kria“ in 2 x Double Room with Mountain View inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterr April mit der empfohlenen Route.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Fosshotel Glacier Lagoon“ in 2 x Ocean View Double Room inklusive Frühstück und Spa Zugang",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterr April mit der empfohlenen Route.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Lake Hotel Egilsstadir“ in 2 x Superior Room with Lake View inklusive Frühstück und Spa Zugang",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterr April mit der empfohlenen Route.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung im „Fosshotel Myvatn“ in 2 x Lake View Room inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterr April mit der empfohlenen Route.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen an der Blauen Lagune „The Retreat“ in 2 x Moss Junior Suite inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Island",
-      "source_file": "Island Musterr April mit der empfohlenen Route.docx",
       "location_heading": "* Mindestalter in Spa 12 Jahre",
       "text": "Mietwagen ab Keflavik / bis Akureyri Toyota Landcruiser 4x4 oder ähnlich",
       "language": "de"
@@ -12939,14 +12604,6 @@
       "source_file": "(Bearbeitung) Guntu 3-tägige Ostwärts-Route.docx",
       "location_heading": "Hinweise:",
       "text": "Bitte verzichten Sie außerdem während der Mahlzeiten auf das Tragen von starkem Parfüm.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Japan",
-      "source_file": "(Bearbeitung) Guntu 3-tägige Ostwärts-Route.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen auf dem schwimmenden Ryokan „Cruise Guntu“ in einer Guntu Suite inklusive Vollpension (Gourmetküche und Getränke) und Programm",
       "language": "de"
     },
     {
@@ -16887,38 +16544,6 @@
     },
     {
       "type": "sightseeing",
-      "destination": "Japan",
-      "source_file": "Setouchi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "4 Übernachtungen in Kurashiki im „Ryokan Kurashiki“ in einer Deluxe Suite inklusive Frühstück und Abendessen",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Japan",
-      "source_file": "Setouchi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "3 Übernachtungen in Onomichi im „Azumi Setoda“ in einem Niwa Suzumi Room inklusive Frühstück und Abendessen",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Japan",
-      "source_file": "Setouchi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Privates Ausflugsprogramm Japan gemäß Reiseverlauf mit privatem Fahrzeug, englisch- oder japanischsprachigem Fahrer und örtlicher englischsprachiger Guide inkl. sämtlicher Eintrittsgelder",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Japan",
-      "source_file": "Setouchi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Escort Service bis zur Plattform und Abholung an der Plattform",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
       "destination": "Kasachstan",
       "source_file": "Rundreise Kasachstan Hinweise.docx",
       "location_heading": "-Route in Maps:",
@@ -17083,46 +16708,6 @@
       "source_file": "Ladakh Indien 07 Night 08 Days Leh to Leh.docx",
       "location_heading": "Pangong - leh",
       "text": "Nach Ihrer Ankunft in Leh checken Sie in Ihr Hotel, das Saboo Resort, ein. Der restliche Tag steht Ihnen zur freien Verfügung.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien 07 Night 08 Days Leh to Leh.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen in Leh im „The Saboo Resorts“ in 1x Cottage Suite inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien 07 Night 08 Days Leh to Leh.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen in Nubra im „Kyagar Resort“ in 1x Cottage Suite inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien 07 Night 08 Days Leh to Leh.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Pangong im „The Water Mark“ in einem Cottage inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien 07 Night 08 Days Leh to Leh.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Leh im „The Saboo Resorts“ in Cottage Suite inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien 07 Night 08 Days Leh to Leh.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Privates Ausflugsprogramm gemäß Reiseverlauf inklusive örtlicher englischsprachiger Guide und sämtliche Eintrittsgelder",
       "language": "de"
     },
     {
@@ -17313,14 +16898,6 @@
       "type": "sightseeing",
       "destination": "Ladakh - Indien",
       "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
-      "location_heading": "Optional:",
-      "text": "Shyok River Rafting – Der mächtige Shyok entspringt den Rimo-Gletschern im Karakorum-Gebirge und durchfließt das weite Nubra-Tal. Erleben Sie die Faszination dieses Flusses bei einer aufregenden Rafting-Tour durch seine Stromschnellen.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
       "location_heading": "Diskit",
       "text": "Genießen Sie die Ruhe und Abgeschiedenheit unseres Camps inmitten der sanft wehenden Sanddünen von Diskit und lauschen Sie den leisen Geschichten vergangener Zeiten, die diese einzigartige Landschaft umwehen.",
       "language": "de"
@@ -17459,54 +17036,6 @@
       "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
       "location_heading": "Delhi / Abreise",
       "text": "Hinweis: Das Hotelzimmer in Delhi steht Ihnen heute nur bis 12:00 Uhr zur Verfügung. Für internationale Flüge wird empfohlen, sich mindestens 3 Stunden vor Abflug am Flughafen einzufinden.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Delhi im „The Lodhi“ in Deluxe inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "3 Übernachtungen in Leh im „Chamba Camp“ in 1x Luxury Suite Tent inklusive Vollpension",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "3 Übernachtungen in Diskit im „Chamba Camp“ in Luxury Suite Tent inklusive Vollpension",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Leh im „Chamba Camp“ in Luxury Suite Tent inklusive Vollpension",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen in Delhi im „The Oberoi“ in Deluxe inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 2 - the ultimate Travelling Camp - 09 Night 10 Days Delhi to Delhi.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Privates Ausflugsprogramm gemäß Reiseverlauf inklusive örtlicher englischsprachiger Guide und sämtliche Eintrittsgelder",
       "language": "de"
     },
     {
@@ -17808,46 +17337,6 @@
     {
       "type": "sightseeing",
       "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 3 - 07 Night 08 Days Leh to Leh  unique village houses.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Delhi im „The Oberoi Gurgaon“ in Premier inklusive Frühstück",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 3 - 07 Night 08 Days Leh to Leh  unique village houses.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "3 Übernachtungen in Nimoo im „Shakti Nimoo Village House“ in 1x Standard inklusive Vollpension",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 3 - 07 Night 08 Days Leh to Leh  unique village houses.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "2 Übernachtungen in Stok im „Shakti Stok Village House“ in Standard inklusive Vollpension",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 3 - 07 Night 08 Days Leh to Leh  unique village houses.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "1 Übernachtung in Delhi im „The Oberoi“ in Premier Plus inklusive Vollpension",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 3 - 07 Night 08 Days Leh to Leh  unique village houses.docx",
-      "location_heading": "Inkludierte Leistungen:",
-      "text": "Privates Ausflugsprogramm gemäß Reiseverlauf inklusive örtlicher englischsprachiger Guide und sämtliche Eintrittsgelder",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
       "source_file": "Ladakh Indien itinerary 4 - 13 nights 14 Days Delhi - Amritsar to Delhi.docx",
       "location_heading": "Delhi – Amritsar / Ankunft",
       "text": "Weiterflug von Dubai nach Delhi mit EK 516 (Abflug: 09:50 Uhr / Ankunft: 14:45 Uhr).",
@@ -18099,22 +17588,6 @@
       "source_file": "Ladakh Indien itinerary 4 - 13 nights 14 Days Delhi - Amritsar to Delhi.docx",
       "location_heading": "Leh",
       "text": "Der Spaziergang endet in der Nähe des Dorfes Chubi, wo Ihr Fahrzeug Sie abholt und zur Shanti Stupa bringt. Diese thront auf einem Aussichtspunkt oberhalb von Leh und bietet einen spektakulären Blick über die eindrucksvolle Landschaft.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 4 - 13 nights 14 Days Delhi - Amritsar to Delhi.docx",
-      "location_heading": "Optional:",
-      "text": "Séance mit einem Orakel – Fahrt zum Dorf Choglamsar für eine Sitzung mit einem Dorf-Orakel.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Ladakh - Indien",
-      "source_file": "Ladakh Indien itinerary 4 - 13 nights 14 Days Delhi - Amritsar to Delhi.docx",
-      "location_heading": "Optional:",
-      "text": "Hinweis: Diese optionale Exkursion wird einen Tag im Voraus bestätigt, sofern das Orakel für ein Treffen zur Verfügung steht.",
       "language": "de"
     },
     {
@@ -20859,14 +20332,6 @@
       "source_file": "Nepal Musterverlauf.docx",
       "location_heading": "Bezahlung / Anzahlung",
       "text": "e) Wählt der Kunde die Bezahlung durch Kreditkarte, so erteilt er bei Buchung die Belastungsermächtigung seiner Kreditkarte. Die An- und Restzahlung wird gemäß Fälligkeit abgebucht.",
-      "language": "de"
-    },
-    {
-      "type": "sightseeing",
-      "destination": "Nepal",
-      "source_file": "Nepal Musterverlauf.docx",
-      "location_heading": "Leistungen",
-      "text": "Welche Leistungen vertraglich vereinbart sind, ergibt sich aus den Leistungsbeschreibungen im Prospekt/Angebot und aus den hierauf bezugnehmenden Angaben der Reisebestätigung. Die in dem Prospekt/Angebot enthaltenden Angaben sind für Bawa bindend. Bawa behält sich jedoch ausdrücklich vor, aus sachlich berechtigten, erheblichen und nicht voraussehbaren Gründen vor Vertragsabschluß eine Änderung der Prospekt/Angebotsangaben zu erklären, über die der Kunde vor Buchung selbstverständlich informiert wird.",
       "language": "de"
     },
     {

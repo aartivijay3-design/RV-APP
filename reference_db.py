@@ -167,6 +167,29 @@ def delete_entry(idx: int) -> None:
     _save(data)
 
 
+# Section headers introducing a bullet-style inclusions/exclusions list, not a
+# place name — a build_reference_db.py corpus bug once stored these whole
+# lists as "sightseeing" paragraphs (a foreign RV's entire Leistungsübersicht
+# ended up verbatim-injected into an unrelated day of a different itinerary
+# purely because a word in the list matched that day's activities). The
+# corpus has been cleaned up and the build script fixed, but this guard stays
+# as a second line of defense against the same bad shape re-entering via a
+# future corpus rebuild or a manual "Datenbank" tab entry.
+_NON_PLACE_HEADING_RE = re.compile(
+    r"^(?:in|ex)?kludierte\s+leistungen\s*:?$"
+    r"|^leistungen\s*:?$"
+    r"|^optional\s*:?$"
+    r"|^nicht\s+(?:inkludiert|enthalten|eingeschlossen)\s*:?$"
+    r"|^ausgeschlossene\s+leistungen\s*:?$",
+    re.IGNORECASE,
+)
+
+
+def _is_real_sightseeing_entry(e: dict) -> bool:
+    heading = (e.get("location_heading") or "").strip()
+    return not (heading and _NON_PLACE_HEADING_RE.match(heading))
+
+
 def _tokens(name: str):
     return [t for t in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]+", name) if len(t) > 3]
 
@@ -240,6 +263,7 @@ def find_sightseeing_references(destination: str, activities_text: str, limit: i
         if e["type"] == "sightseeing"
         and e.get("language") == "de"
         and e["destination"].lower() == destination.lower()
+        and _is_real_sightseeing_entry(e)
     ]
     if not candidates:
         return []
@@ -326,6 +350,16 @@ _GENERIC_STEMS = (
     # fish market, which only mentions sushi in passing as one of many foods
     # sold there.
     "sushi",
+    # Generic dining-logistics vocabulary — a bullet like "Mittagessen im
+    # Restaurant Lore Bistro" has exactly one real distinguishing word
+    # ("Lore", the restaurant's own name) buried among words that describe
+    # *any* meal at *any* restaurant. Without these excluded, the bullet
+    # matched an unrelated stored paragraph about a different city entirely
+    # purely because it happened to also contain the word "Mittagessen" in
+    # passing — "Abendessen" was already excluded (via the "abend" stem)
+    # but its breakfast/lunch counterparts were not.
+    "restaurant", "bistro", "café", "cafe", "mittagessen", "mittag",
+    "frühstück", "imbiss", "picknick",
 )
 
 # Short/irregular words that don't decline predictably enough for prefix
@@ -367,6 +401,7 @@ def find_exact_sightseeing_matches(destination: str, activities_text: str, locat
         and e.get("language") == "de"
         and e["destination"].lower() == destination.lower()
         and e["text"] not in hotel_texts
+        and _is_real_sightseeing_entry(e)
     ]
     if not candidates:
         return []
