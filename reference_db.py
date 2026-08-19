@@ -185,9 +185,60 @@ _NON_PLACE_HEADING_RE = re.compile(
 )
 
 
+# Nouns that essentially only ever CONTINUE a sentence, because they follow a
+# number or ordinal ("im 14. Jahrhundert", "um 15:00 Uhr", "nach 20 Minuten").
+# A stored paragraph starting with one of these is a fragment, not a paragraph.
+_FRAGMENT_START_RE = re.compile(
+    r"^(Jahrhundert|Uhr|Kilometer|Meter|Minuten|Stunden?|Tagen?|Jahren?|Prozent|Grad)\b"
+)
+
+
+def _is_reusable_text(text: str) -> bool:
+    """False for a stored paragraph that begins mid-sentence.
+
+    The corpus is built by reflowing PDF text, and a wrapped paragraph can
+    be cut at the wrap point — leaving entries that start lowercase ("als
+    eine Sommerresidenz errichten ließ…") or on a continuation noun
+    ("Jahrhundert gefahren. Es war einst…"). Reused verbatim these open a
+    client-facing day mid-thought, which is exactly how one real document
+    began a Trakai paragraph with the word "Jahrhundert". ~80 entries across
+    the corpus have this shape, so it is filtered here rather than hunted
+    down entry by entry.
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    return not (t[0].islower() or _FRAGMENT_START_RE.match(t))
+
+
+def _mentions_as_subject(haystack_lower: str, token_lower: str) -> bool:
+    """True when `token_lower` is what the paragraph is ABOUT, not something
+    it name-drops on the way past.
+
+    These matches drive VERBATIM reuse of a whole stored paragraph, so a
+    passing mention is not enough justification. A real case: a day whose
+    only distinctive word was "Lahemaa" matched a paragraph that opens by
+    announcing a drive to Tallinn and mentions the Lahemaa national park
+    once, in its closing sentence — reused verbatim, it told a client they
+    were travelling to a city they had already been in for two days.
+    Requiring the name to appear early keeps paragraphs genuinely written
+    about that place and rejects the ones that merely touch on it.
+    """
+    m = re.search(rf"\b{re.escape(token_lower)}\b", haystack_lower)
+    if not m:
+        return False
+    # Roughly "introduced in the opening sentence or two, or in the first
+    # half". The absolute floor stays small on purpose: the paragraph that
+    # caused the bug above was only 242 characters and still buried the name
+    # at 92% through, so a generous floor would have let it straight back in.
+    return m.start() <= max(120, int(len(haystack_lower) * 0.5))
+
+
 def _is_real_sightseeing_entry(e: dict) -> bool:
     heading = (e.get("location_heading") or "").strip()
-    return not (heading and _NON_PLACE_HEADING_RE.match(heading))
+    if heading and _NON_PLACE_HEADING_RE.match(heading):
+        return False
+    return _is_reusable_text(e.get("text", ""))
 
 
 def _tokens(name: str):
@@ -360,6 +411,25 @@ _GENERIC_STEMS = (
     # but its breakfast/lunch counterparts were not.
     "restaurant", "bistro", "café", "cafe", "mittagessen", "mittag",
     "frühstück", "imbiss", "picknick",
+    # Generic townscape nouns. German capitalizes every noun, so to the
+    # matcher these are indistinguishable from a real place name — and one
+    # of them alone was enough to justify reusing a whole paragraph
+    # verbatim. "Spaziergang durch die Altstadt" (Vilnius, day one) matched
+    # a stored paragraph about KLAIPEDA's old town, importing a city this
+    # trip never visits; the same bullet shape recurs in almost every
+    # itinerary, so this was not a one-off.
+    "altstadt", "neustadt", "innenstadt", "hauptstadt", "stadtzentrum",
+    "stadtmauer", "promenade", "kathedrale", "rathaus", "markthalle",
+    "zentralmarkt", "bauernmarkt", "künstlerviertel",
+    # Restaurant guides and wine/tasting vocabulary. "Abendessen in einem
+    # MICHELIN Restaurant" matched an unrelated paragraph about an Estonian
+    # winery that only mentions Michelin stars in passing — and because that
+    # bullet repeats on several days, the same wrong paragraph was injected
+    # twice into one document.
+    "michelin", "gault", "millau", "falstaff",
+    "weingut", "weinhof", "weinkeller", "winzer", "kellermeister",
+    "sommelier", "verkostung", "degustation", "kochkurs", "kochworkshop",
+    "kochstudio",
 )
 
 # Short/irregular words that don't decline predictably enough for prefix
@@ -420,7 +490,7 @@ def find_exact_sightseeing_matches(destination: str, activities_text: str, locat
     groups: dict = {}
     for e in candidates:
         haystack = e["text"].lower()
-        matched = frozenset(t for t in want_positions if _contains_word(haystack, t))
+        matched = frozenset(t for t in want_positions if _mentions_as_subject(haystack, t))
         if not matched:
             continue
         groups.setdefault(matched, []).append(e)

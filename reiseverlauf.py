@@ -84,8 +84,43 @@ def body_para(text: str) -> str:
     return para(PPR_BODY, RPR_TEAL, text)
 
 
-def hotel_line(name: str) -> str:
-    return para(PPR_BODY, RPR_GOLD_B, f"Übernachtung im {name}")
+def hotel_line(text: str) -> str:
+    """The gold 'Übernachtung …' line closing a day. Takes the finished
+    sentence (see _overnight_label) rather than just a hotel name, because
+    the wording differs: 'im «Hotel»' when a property is named, 'in Riga'
+    when the DMC only marks that a night happens in that town."""
+    return para(PPR_BODY, RPR_GOLD_B, text)
+
+
+def _overnight_city(location_heading: str) -> str:
+    """The town the client actually sleeps in on this day.
+
+    On a transfer day the heading is 'CityA - CityB' (start to end), so the
+    overnight is the LAST city, not the first."""
+    loc = re.sub(r"\s*/\s*(Ankunft|Abreise)\s*$", "", location_heading or "",
+                 flags=re.IGNORECASE).strip()
+    if not loc:
+        return ""
+    return re.split(r"\s+[-–—]\s+", loc)[-1].strip()
+
+
+def _overnight_label(day: dict) -> str:
+    """Text for the day's gold overnight line, or '' when there is no
+    overnight (a departure day, whose hotel is cleared by design).
+
+    Many DMC offers never name a property and only write a shorthand marker
+    like 'Ü in Vilnius' — extraction correctly returns no hotel name for
+    those (that marker is not a hotel), but the night itself is still real
+    and the line must still appear, naming the town instead of a property.
+    """
+    hotel = day.get("hotel")
+    if not isinstance(hotel, dict):
+        return ""
+    name = (hotel.get("name") or "").strip()
+    if name:
+        return f"Übernachtung im {name}"
+    city = _overnight_city(day.get("location_heading") or "")
+    return f"Übernachtung in {city}" if city else ""
 
 
 def section_heading(text: str) -> str:
@@ -335,7 +370,12 @@ def build_reiseubersicht_table(days: list, photo_rids: list = None) -> str:
                     f'<w:t xml:space="preserve">· {x(b)}</w:t></w:r></w:p>'
                 )
 
-            col3_text = hotel_name if hotel_name else "–"
+            # Same fallback as the day's gold line: when the DMC names no
+            # property but a night still happens here, show the town rather
+            # than an empty dash.
+            col3_text = hotel_name or _overnight_city(location) if (
+                isinstance(day.get("hotel"), dict)) else ""
+            col3_text = col3_text or "–"
             col3 = (
                 f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
                 f'<w:r><w:rPr>{rpr()}</w:rPr>'
@@ -628,9 +668,9 @@ def build_body_xml(itinerary: dict, ubersicht_mode: str = "both") -> str:
             # only a generic overnight marker like "Ü in Vilnius". Nothing
             # useful to print in that case, so skip the line rather than
             # show either a blank "Übernachtung im" or that marker verbatim.
-            hotel_name = (hotel.get("name") or "").strip()
-            if hotel_name:
-                parts.append(hotel_line(hotel_name))
+            overnight = _overnight_label(day)
+            if overnight:
+                parts.append(hotel_line(overnight))
                 parts.append(ep())
 
         parts.append(ep())
