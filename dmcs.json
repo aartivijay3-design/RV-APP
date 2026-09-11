@@ -289,5 +289,14 @@
       "mobile": "+855 92 632 078",
       "note": "Vietnam: +84 98 492 4004 | Cambodia: +855 1251 2927 | Laos: +856 20 5858 9119"
     }
+  ],
+  "Mauritius": [
+    {
+      "id": "solis_indian_ocean_ltd_mauritius",
+      "name": "SOLIS Indian Ocean Ltd.",
+      "contact_person": "Dilshad Joomun",
+      "mobile": "+230 650 6000",
+      "note": "+ 230 5919 4135."
+    }
   ]
 }
