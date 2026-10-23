@@ -27493,6 +27493,14 @@
       "language": "de",
       "text": "Das Wilderness Hotel Saariselkä liegt inmitten der unberührten Natur Lapplands, etwa 15 Kilometer vom Flughafen Ivalo entfernt. Es bietet eine authentische und komfortable Basis für Abenteuer in der Wildnis. Die 120 Zimmer und Suiten sind im traditionellen lappländischen Stil eingerichtet und bieten moderne Annehmlichkeiten. Das Hotel ist bekannt für seine hervorragende Lage zur Beobachtung der Nordlichter und bietet direkten Zugang zu zahlreichen Winteraktivitäten wie Schneemobilfahrten und Husky-Safaris. Es ist der ideale Ausgangspunkt, um die arktische Landschaft zu erkunden und die Magie des hohen Nordens hautnah zu erleben.",
       "hotel_name": "Wilderness Hotel Saariselkä"
+    },
+    {
+      "type": "hotel",
+      "destination": "Lappland, Finnland",
+      "source_file": "Manuell hinzugefügt (Datenbank-Tab)",
+      "language": "de",
+      "text": "Das Levin Iglut Golden Crown liegt auf einem Berg in der Nähe des Skigebiets Levi und bietet sehr komfortable Glas-Iglus mit Panoramablick auf die arktische Landschaft. Jedes Superior Igloo ist mit einer beheizten Glasdecke ausgestattet, die einen ungestörten Blick auf den Himmel und die Nordlichter ermöglicht. Die Iglus bieten zudem eine kleine Küchenzeile und ein eigenes Bad. Für eine unvergessliche Nacht unter dem Sternenhimmel Lapplands ist dieses Hotel eine sehr gute Wahl. Eine Halbpension (drei Gänge Menü) kann optional hinzubestellt werden.",
+      "hotel_name": "Levin Iglut Golden Crown"
     }
   ]
 }
